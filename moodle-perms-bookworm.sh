@@ -47,6 +47,7 @@ show_help() {
     echo "  -h, --help              Mostra questo help"
     echo "  -v, --version           Mostra informazioni sulla versione"
     echo "  -d, --dry-run           Simula le operazioni senza applicare cambiamenti"
+    echo "  -s, --show-perms        Mostra i permessi attuali senza modificare"
     echo "  -mp, --moodlepath PATH  Specifica il percorso di installazione di Moodle"
     echo "  -md, --moodledata PATH  Specifica il percorso di moodledata"
     echo "  -mv, --moodleversion VERSION Specifica versione Moodle (4|5)"
@@ -55,8 +56,9 @@ show_help() {
     echo "  $0                               # Usa versione default (Moodle ${DEFAULT_MOODLE_VERSION})"
     echo "  $0 -mv 5                         # Forza versione Moodle 5"
     echo "  $0 -mv 4 -d                      # Moodle 4 in dry-run"
+    echo "  $0 -mv 5 -s                      # Mostra permessi attuali Moodle 5"
     echo "  $0 -mp /opt/moodle -mv 5         # Percorso personalizzato + versione"
-    echo "  $0 -mp /opt/moodle -md /opt/moodledata -mv 4  # Tutti i parametri"
+    echo "  $0 -mp /opt/moodle -md /opt/moodledata -mv 4 -s  # Tutti i parametri + show"
     echo ""
     echo "Note:"
     echo "  Versione Moodle di default: ${DEFAULT_MOODLE_VERSION}.x"
@@ -96,6 +98,145 @@ check_main_directories() {
         echo "❌ ERRORE: Directory Moodledata non trovata: $MOODLEDATA_DIR"
         exit 1
     fi
+}
+
+# Funzione per mostrare i permessi attuali Moodle 4
+show_moodle4_permissions() {
+    echo "🔍 Permessi attuali directory Moodle 4:"
+    echo ""
+    
+    echo "📁 Directory principali:"
+    for dir in "$MOODLE_DIR" "$MOODLEDATA_DIR"; do
+        if [ -d "$dir" ]; then
+            perms=$(stat -c "%a %U:%G" "$dir")
+            echo "   $dir: $perms"
+        else
+            echo "   $dir: ❌ NON TROVATA"
+        fi
+    done
+    
+    echo ""
+    echo "📁 Directory specifiche Moodle 4:"
+    local moodle4_dirs=("cache" "temp" "sessions" "lang" "h5p" "backup" "restore" "trashdir" "webservice" "filedir" "repository" "log")
+    
+    for dir in "${moodle4_dirs[@]}"; do
+        local full_path="$MOODLEDATA_DIR/$dir"
+        if [ -d "$full_path" ]; then
+            perms=$(stat -c "%a %U:%G" "$full_path")
+            echo "   $full_path: $perms"
+        else
+            echo "   $full_path: 📁 NON ESISTE"
+        fi
+    done
+    
+    echo ""
+    echo "📁 File config.php:"
+    if [ -f "$MOODLE_DIR/config.php" ]; then
+        perms=$(stat -c "%a %U:%G" "$MOODLE_DIR/config.php")
+        echo "   $MOODLE_DIR/config.php: $perms"
+    else
+        echo "   $MOODLE_DIR/config.php: ❌ NON TROVATO"
+    fi
+    
+    echo ""
+    echo "📁 Script CLI:"
+    if [ -d "$MOODLE_DIR/admin/cli" ]; then
+        local cli_scripts=$(find "$MOODLE_DIR/admin/cli" -name "*.php" | head -3)
+        if [ -n "$cli_scripts" ]; then
+            echo "   Prime 3 script CLI:"
+            while IFS= read -r script; do
+                if [ -f "$script" ]; then
+                    perms=$(stat -c "%a %U:%G" "$script")
+                    echo "   $script: $perms"
+                fi
+            done <<< "$cli_scripts"
+        else
+            echo "   Nessuno script CLI trovato"
+        fi
+    else
+        echo "   Directory CLI non trovata"
+    fi
+}
+
+# Funzione per mostrare i permessi attuali Moodle 5
+show_moodle5_permissions() {
+    echo "🔍 Permessi attuali directory Moodle 5:"
+    echo ""
+    
+    echo "📁 Directory principali:"
+    for dir in "$MOODLE_DIR" "$MOODLEDATA_DIR"; do
+        if [ -d "$dir" ]; then
+            perms=$(stat -c "%a %U:%G" "$dir")
+            echo "   $dir: $perms"
+        else
+            echo "   $dir: ❌ NON TROVATA"
+        fi
+    done
+    
+    echo ""
+    echo "📁 Directory specifiche Moodle 5:"
+    local moodle5_dirs=("cache" "temp" "lock" "tasks" "localcache" "sessions" "lang" "h5p" "backup" "restore" "trash" "webservice")
+    
+    for dir in "${moodle5_dirs[@]}"; do
+        local full_path="$MOODLEDATA_DIR/$dir"
+        if [ -d "$full_path" ]; then
+            perms=$(stat -c "%a %U:%G" "$full_path")
+            echo "   $full_path: $perms"
+        else
+            echo "   $full_path: 📁 NON ESISTE"
+        fi
+    done
+    
+    echo ""
+    echo "📁 File config.php:"
+    if [ -f "$MOODLE_DIR/config.php" ]; then
+        perms=$(stat -c "%a %U:%G" "$MOODLE_DIR/config.php")
+        echo "   $MOODLE_DIR/config.php: $perms"
+    else
+        echo "   $MOODLE_DIR/config.php: ❌ NON TROVATO"
+    fi
+    
+    echo ""
+    echo "📁 Script CLI:"
+    if [ -d "$MOODLE_DIR/admin/cli" ]; then
+        local cli_scripts=$(find "$MOODLE_DIR/admin/cli" -name "*.php" | head -3)
+        if [ -n "$cli_scripts" ]; then
+            echo "   Prime 3 script CLI:"
+            while IFS= read -r script; do
+                if [ -f "$script" ]; then
+                    perms=$(stat -c "%a %U:%G" "$script")
+                    echo "   $script: $perms"
+                fi
+            done <<< "$cli_scripts"
+        else
+            echo "   Nessuno script CLI trovato"
+        fi
+    else
+        echo "   Directory CLI non trovata"
+    fi
+}
+
+# Funzione per mostrare i permessi attuali
+show_current_permissions() {
+    echo "🔍 [SHOW-PERMS] Visualizzazione permessi attuali - Nessuna modifica verrà applicata"
+    echo "🎯 Versione Moodle: ${MOODLE_VERSION}.x"
+    echo ""
+    
+    if [ "$MOODLE_VERSION" = "4" ]; then
+        show_moodle4_permissions
+    else
+        show_moodle5_permissions
+    fi
+    
+    echo ""
+    echo "📋 Permessi raccomandati:"
+    echo "   - Directory Moodle: 755 (dir) / 644 (file)"
+    echo "   - Directory Moodledata: 770 (dir) / 660 (file)"
+    echo "   - config.php: 640"
+    echo "   - Script CLI: 755"
+    echo "   - Proprietario: ${WWW_USER}:${WWW_GROUP}"
+    
+    exit 0
 }
 
 # Funzione per creare directory se non esistono
@@ -261,6 +402,7 @@ dry_run() {
 
 # Parsing degli argomenti
 DRY_RUN=false
+SHOW_PERMS=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help)
@@ -273,6 +415,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -d|--dry-run)
             DRY_RUN=true
+            shift
+            ;;
+        -s|--show-perms)
+            SHOW_PERMS=true
             shift
             ;;
         -mp|--moodlepath)
@@ -305,10 +451,15 @@ echo "   - Directory Moodle: $MOODLE_DIR"
 echo "   - Directory Moodledata: $MOODLEDATA_DIR"
 echo ""
 
-# Verifica che lo script sia eseguito come root
-if [ "$(id -u)" -ne 0 ]; then
+# Verifica che lo script sia eseguito come root (tranne per show-perms)
+if [ "$SHOW_PERMS" = false ] && [ "$(id -u)" -ne 0 ]; then
     echo "❌ Questo script deve essere eseguito come root"
     exit 1
+fi
+
+# Esegui show-perms se richiesto
+if [ "$SHOW_PERMS" = true ]; then
+    show_current_permissions
 fi
 
 # Esegui dry-run se richiesto
