@@ -3,12 +3,60 @@
 # Permessi e proprietà per Moodle 5.x su Debian 12
 # ========================================================
 
+# Variabile di release in stile Ubuntu
+SCRIPT_RELEASE="5.2.1"
+SCRIPT_CODENAME="Stable Falcon"
+SCRIPT_DATE="2024-12-19"
+SCRIPT_AUTHOR="Moodle Admin Team"
+SCRIPT_LICENSE="GPL-3.0"
+
 set -e  # Esce immediatamente in caso di errore
 
 MOODLE_DIR="/var/www/moodle"
 MOODLEDATA_DIR="/var/moodledata"
 WWW_USER="www-data"
 WWW_GROUP="www-data"
+
+# Funzione per mostrare l'header
+show_header() {
+    echo "================================================================================"
+    echo "Moodle Permissions Manager v${SCRIPT_RELEASE} (${SCRIPT_CODENAME})"
+    echo "================================================================================"
+    echo "Author: ${SCRIPT_AUTHOR}"
+    echo "Release: ${SCRIPT_RELEASE} - ${SCRIPT_DATE}"
+    echo "License: ${SCRIPT_LICENSE}"
+    echo "================================================================================"
+    echo ""
+}
+
+# Funzione per mostrare l'help
+show_help() {
+    echo "Utilizzo: $0 [OPZIONI]"
+    echo ""
+    echo "Opzioni:"
+    echo "  -h, --help          Mostra questo help"
+    echo "  -v, --version       Mostra informazioni sulla versione"
+    echo "  -d, --dry-run       Simula le operazioni senza applicare cambiamenti"
+    echo "  -p, --path PATH     Specifica il percorso di installazione di Moodle"
+    echo "  -m, --moodledata PATH Specifica il percorso di moodledata"
+    echo ""
+    echo "Esempi:"
+    echo "  $0                    # Esegue con i percorsi predefiniti"
+    echo "  $0 -d                 # Modalità dry-run"
+    echo "  $0 -p /opt/moodle     # Specifica percorso personalizzato"
+    echo ""
+}
+
+# Funzione per mostrare la versione
+show_version() {
+    echo "Moodle Permissions Manager v${SCRIPT_RELEASE}"
+    echo "Codename: ${SCRIPT_CODENAME}"
+    echo "Release Date: ${SCRIPT_DATE}"
+    echo "Author: ${SCRIPT_AUTHOR}"
+    echo "License: ${SCRIPT_LICENSE}"
+    echo "Compatible with: Moodle 5.x, Debian 12, Ubuntu 22.04+"
+    exit 0
+}
 
 # Funzione per verificare l'esistenza delle directory
 check_directories() {
@@ -23,10 +71,83 @@ check_directories() {
     fi
 }
 
+# Funzione per il dry-run
+dry_run() {
+    echo "🔍 [DRY-RUN] Modalità simulazione attiva - Nessuna modifica verrà applicata"
+    echo ""
+    echo "📋 Operazioni che verrebbero eseguite:"
+    echo "   chown -R ${WWW_USER}:${WWW_GROUP} \"$MOODLE_DIR\""
+    echo "   chown -R ${WWW_USER}:${WWW_GROUP} \"$MOODLEDATA_DIR\""
+    echo "   find \"$MOODLE_DIR\" -type d -exec chmod 755 {} \\;"
+    echo "   find \"$MOODLE_DIR\" -type f -exec chmod 644 {} \\;"
+    echo "   find \"$MOODLEDATA_DIR\" -type d -exec chmod 770 {} \\;"
+    echo "   find \"$MOODLEDATA_DIR\" -type f -exec chmod 660 {} \\;"
+    
+    if [ -f "$MOODLE_DIR/config.php" ]; then
+        echo "   chmod 640 \"$MOODLE_DIR/config.php\""
+    fi
+    
+    # Directory specifiche Moodle 5
+    local special_dirs=("cache" "temp" "lock" "tasks" "localcache" "sessions" "lang" "h5p" "backup" "restore" "trash" "webservice")
+    for dir in "${special_dirs[@]}"; do
+        if [ -d "$MOODLEDATA_DIR/$dir" ]; then
+            echo "   chmod 770 \"$MOODLEDATA_DIR/$dir\""
+        fi
+    done
+    
+    if [ -d "$MOODLE_DIR/admin/cli" ]; then
+        echo "   find \"$MOODLE_DIR/admin/cli\" -name \"*.php\" -exec chmod 755 {} \\;"
+    fi
+    
+    echo ""
+    echo "✅ [DRY-RUN] Simulazione completata - Nessuna modifica applicata"
+    exit 0
+}
+
+# Parsing degli argomenti
+DRY_RUN=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            show_header
+            show_help
+            exit 0
+            ;;
+        -v|--version)
+            show_version
+            ;;
+        -d|--dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        -p|--path)
+            MOODLE_DIR="$2"
+            shift 2
+            ;;
+        -m|--moodledata)
+            MOODLEDATA_DIR="$2"
+            shift 2
+            ;;
+        *)
+            echo "❌ Argomento sconosciuto: $1"
+            echo "Usa $0 --help per vedere le opzioni disponibili"
+            exit 1
+            ;;
+    esac
+done
+
+# Mostra header
+show_header
+
 # Verifica che lo script sia eseguito come root
 if [ "$(id -u)" -ne 0 ]; then
     echo "❌ Questo script deve essere eseguito come root"
     exit 1
+fi
+
+# Esegui dry-run se richiesto
+if [ "$DRY_RUN" = true ]; then
+    dry_run
 fi
 
 echo "🔍 Verifica directory..."
@@ -143,7 +264,8 @@ done
 echo ""
 echo "✅ Permessi Moodle 5 impostati correttamente!"
 echo ""
-echo "📋 Riepilogo:"
+echo "📋 Riepilogo configurazione:"
+echo "   - Versione script: ${SCRIPT_RELEASE} (${SCRIPT_CODENAME})"
 echo "   - Moodle dir: $MOODLE_DIR (755/644)"
 echo "   - Moodledata: $MOODLEDATA_DIR (770/660)" 
 echo "   - Proprietario: $WWW_USER:$WWW_GROUP"
@@ -155,3 +277,7 @@ echo "⚠️  Note importanti per Moodle 5:"
 echo "   - Assicurati che PHP 8.1+ sia installato"
 echo "   - Verifica che le estensioni PHP richieste siano abilitate"
 echo "   - Controlla i log in $MOODLEDATA_DIR per errori"
+echo ""
+echo "================================================================================"
+echo "Moodle Permissions Manager v${SCRIPT_RELEASE} - Operazione completata"
+echo "================================================================================"
