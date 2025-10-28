@@ -131,11 +131,11 @@ show_moodle4_permissions() {
     
     echo ""
     echo "📁 config.php file:"
-    if [ -f "$MOODLE_DIRconfig.php" ]; then
-        perms=$(stat -c "%a %U:%G" "$MOODLE_DIRconfig.php")
-        echo "   $MOODLE_DIRconfig.php: $perms"
+    if [ -f "$MOODLE_DIR/config.php" ]; then
+        perms=$(stat -c "%a %U:%G" "$MOODLE_DIR/config.php")
+        echo "   $MOODLE_DIR/config.php: $perms"
     else
-        echo "   $MOODLE_DIRconfig.php: ❌ NOT FOUND"
+        echo "   $MOODLE_DIR/config.php: ❌ NOT FOUND"
     fi
     
     echo ""
@@ -189,11 +189,11 @@ show_moodle5_permissions() {
     
     echo ""
     echo "📁 config.php file:"
-    if [ -f "$MOODLE_DIRconfig.php" ]; then
-        perms=$(stat -c "%a %U:%G" "$MOODLE_DIRconfig.php")
-        echo "   $MOODLE_DIRconfig.php: $perms"
+    if [ -f "$MOODLE_DIR/config.php" ]; then
+        perms=$(stat -c "%a %U:%G" "$MOODLE_DIR/config.php")
+        echo "   $MOODLE_DIR/config.php: $perms"
     else
-        echo "   $MOODLE_DIRconfig.php: ❌ NOT FOUND"
+        echo "   $MOODLE_DIR/config.php: ❌ NOT FOUND"
     fi
     
     echo ""
@@ -369,8 +369,8 @@ dry_run() {
     echo "   find \"$MOODLEDATA_DIR\" -type d -exec chmod 770 {} \\;"
     echo "   find \"$MOODLEDATA_DIR\" -type f -exec chmod 660 {} \\;"
     
-    if [ -f "$MOODLE_DIRconfig.php" ]; then
-        echo "   chmod 640 \"$MOODLE_DIRconfig.php\""
+    if [ -f "$MOODLE_DIR/config.php" ]; then
+        echo "   chmod 640 \"$MOODLE_DIR/config.php\""
     else
         echo "   # config.php not found in $MOODLE_DIR (will be skipped)"
     fi
@@ -487,9 +487,9 @@ find "$MOODLE_DIR" -type d -exec chmod 755 {} \;
 find "$MOODLE_DIR" -type f -exec chmod 644 {} \;
 
 # Check if config.php exists before modifying it
-if [ -f "$MOODLE_DIRconfig.php" ]; then
+if [ -f "$MOODLE_DIR/config.php" ]; then
     echo "🔒 Protecting config.php..."
-    chmod 640 "$MOODLE_DIRconfig.php"
+    chmod 640 "$MOODLE_DIR/config.php"
 else
     echo "⚠️  Warning: config.php not found in $MOODLE_DIR"
 fi
