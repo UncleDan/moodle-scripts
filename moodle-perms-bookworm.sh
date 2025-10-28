@@ -4,12 +4,15 @@
 # Supports Moodle 4.x and 5.x
 # ========================================================
 
-# Variabile di release in stile Ubuntu
-SCRIPT_RELEASE="5.3.0"
+# Variabile di release in stile Ubuntu (SCRIPT RELEASE)
+SCRIPT_RELEASE="25.10"
 SCRIPT_CODENAME="Universal Hawk"
-SCRIPT_DATE="2024-12-19"
-SCRIPT_AUTHOR="Moodle Admin Team"
+SCRIPT_DATE="2025-10-25"
+SCRIPT_AUTHOR="Daniele Lolli (UncleDan)"
 SCRIPT_LICENSE="GPL-3.0"
+
+# Versione Moodle di default (indipendente dalla release dello script)
+DEFAULT_MOODLE_VERSION="4"
 
 set -e  # Esce immediatamente in caso di errore
 
@@ -19,13 +22,8 @@ MOODLEDATA_DIR="/var/moodledata"
 WWW_USER="www-data"
 WWW_GROUP="www-data"
 
-# Determina versione Moodle dal numero di versione dello script
-MOODLE_VERSION=""
-if [[ "$SCRIPT_RELEASE" == 4.* ]]; then
-    MOODLE_VERSION="4"
-elif [[ "$SCRIPT_RELEASE" == 5.* ]]; then
-    MOODLE_VERSION="5"
-fi
+# Determina versione Moodle (usa default se non specificata)
+MOODLE_VERSION="$DEFAULT_MOODLE_VERSION"
 
 # Funzione per mostrare l'header
 show_header() {
@@ -35,7 +33,8 @@ show_header() {
     echo "Author: ${SCRIPT_AUTHOR}"
     echo "Release: ${SCRIPT_RELEASE} - ${SCRIPT_DATE}"
     echo "License: ${SCRIPT_LICENSE}"
-    echo "Moodle Version: ${MOODLE_VERSION}.x (auto-detected)"
+    echo "Default Moodle Version: ${DEFAULT_MOODLE_VERSION}.x"
+    echo "Selected Moodle Version: ${MOODLE_VERSION}.x"
     echo "================================================================================"
     echo ""
 }
@@ -53,15 +52,15 @@ show_help() {
     echo "  -mv, --moodleversion VERSION Specifica versione Moodle (4|5)"
     echo ""
     echo "Esempi:"
-    echo "  $0                               # Auto-detect dalla versione script"
+    echo "  $0                               # Usa versione default (Moodle ${DEFAULT_MOODLE_VERSION})"
     echo "  $0 -mv 5                         # Forza versione Moodle 5"
     echo "  $0 -mv 4 -d                      # Moodle 4 in dry-run"
     echo "  $0 -mp /opt/moodle -mv 5         # Percorso personalizzato + versione"
     echo "  $0 -mp /opt/moodle -md /opt/moodledata -mv 4  # Tutti i parametri"
     echo ""
     echo "Note:"
-    echo "  Se non viene specificata la versione, viene usata quella dello script"
-    echo "  Versione script ${SCRIPT_RELEASE} -> Moodle ${MOODLE_VERSION}.x"
+    echo "  Versione Moodle di default: ${DEFAULT_MOODLE_VERSION}.x"
+    echo "  Versione script: ${SCRIPT_RELEASE}"
 }
 
 # Funzione per mostrare la versione
@@ -71,7 +70,7 @@ show_version() {
     echo "Release Date: ${SCRIPT_DATE}"
     echo "Author: ${SCRIPT_AUTHOR}"
     echo "License: ${SCRIPT_LICENSE}"
-    echo "Auto-detected Moodle Version: ${MOODLE_VERSION}.x"
+    echo "Default Moodle Version: ${DEFAULT_MOODLE_VERSION}.x"
     echo "Compatible with: Moodle 4.x & 5.x, Debian 11/12, Ubuntu 20.04+"
     exit 0
 }
@@ -296,14 +295,6 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-# Validazione finale versione Moodle
-if [ -z "$MOODLE_VERSION" ]; then
-    echo "❌ ERRORE: Impossibile determinare la versione di Moodle"
-    echo "   La versione dello script ($SCRIPT_RELEASE) non inizia con 4. o 5."
-    echo "   Usa l'opzione -mv per specificare manualmente la versione (4 o 5)"
-    exit 1
-fi
 
 # Mostra header
 show_header
