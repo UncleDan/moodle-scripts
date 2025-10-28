@@ -18,7 +18,7 @@ set -e  # Exit immediately on error
 
 # Default configurations
 MOODLE_DIR="/var/www/moodle"
-MOODLEDATA_DIR="/var/www/moodledata"
+MOODLEDATA_DIR="/var/moodledata"
 WWW_USER="www-data"
 WWW_GROUP="www-data"
 
@@ -140,8 +140,8 @@ show_moodle4_permissions() {
     
     echo ""
     echo "📁 CLI scripts:"
-    if [ -d "$MOODLE_DIRadmin/cli" ]; then
-        local cli_scripts=$(find "$MOODLE_DIRadmin/cli" -name "*.php" | head -3)
+    if [ -d "$MOODLE_DIR/admin/cli" ]; then
+        local cli_scripts=$(find "$MOODLE_DIR/admin/cli" -name "*.php" | head -3)
         if [ -n "$cli_scripts" ]; then
             echo "   First 3 CLI scripts:"
             while IFS= read -r script; do
@@ -198,8 +198,8 @@ show_moodle5_permissions() {
     
     echo ""
     echo "📁 CLI scripts:"
-    if [ -d "$MOODLE_DIRadmin/cli" ]; then
-        local cli_scripts=$(find "$MOODLE_DIRadmin/cli" -name "*.php" | head -3)
+    if [ -d "$MOODLE_DIR/admin/cli" ]; then
+        local cli_scripts=$(find "$MOODLE_DIR/admin/cli" -name "*.php" | head -3)
         if [ -n "$cli_scripts" ]; then
             echo "   First 3 CLI scripts:"
             while IFS= read -r script; do
@@ -375,10 +375,10 @@ dry_run() {
         echo "   # config.php not found in $MOODLE_DIR (will be skipped)"
     fi
     
-    if [ -d "$MOODLE_DIRadmin/cli" ]; then
-        echo "   find \"$MOODLE_DIRadmin/cli\" -name \"*.php\" -exec chmod 755 {} \\;"
+    if [ -d "$MOODLE_DIR/admin/cli" ]; then
+        echo "   find \"$MOODLE_DIR/admin/cli\" -name \"*.php\" -exec chmod 755 {} \\;"
     else
-        echo "   # CLI directory not found in $MOODLE_DIRadmin/cli (will be skipped)"
+        echo "   # CLI directory not found in $MOODLE_DIR/admin/cli (will be skipped)"
     fi
     
     echo ""
@@ -499,8 +499,8 @@ find "$MOODLEDATA_DIR" -type d -exec chmod 770 {} \;
 find "$MOODLEDATA_DIR" -type f -exec chmod 660 {} \;
 
 # CLI scripts (common to both versions)
-if [ -d "$MOODLE_DIRadmin/cli" ]; then
-    find "$MOODLE_DIRadmin/cli" -name "*.php" -exec chmod 755 {} \;
+if [ -d "$MOODLE_DIR/admin/cli" ]; then
+    find "$MOODLE_DIR/admin/cli" -name "*.php" -exec chmod 755 {} \;
     echo "✅ CLI scripts set as executable"
 fi
 
