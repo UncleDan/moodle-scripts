@@ -120,7 +120,7 @@ show_moodle4_permissions() {
     local moodle4_dirs=("cache" "temp" "sessions" "lang" "h5p" "backup" "restore" "trashdir" "webservice" "filedir" "repository" "log")
     
     for dir in "${moodle4_dirs[@]}"; do
-        local full_path="$MOODLEDATA_DIR/$dir"
+        local full_path="$MOODLEDATA_DIR$dir"
         if [ -d "$full_path" ]; then
             perms=$(stat -c "%a %U:%G" "$full_path")
             echo "   $full_path: $perms"
@@ -131,17 +131,17 @@ show_moodle4_permissions() {
     
     echo ""
     echo "📁 config.php file:"
-    if [ -f "$MOODLE_DIR/config.php" ]; then
-        perms=$(stat -c "%a %U:%G" "$MOODLE_DIR/config.php")
-        echo "   $MOODLE_DIR/config.php: $perms"
+    if [ -f "$MOODLE_DIRconfig.php" ]; then
+        perms=$(stat -c "%a %U:%G" "$MOODLE_DIRconfig.php")
+        echo "   $MOODLE_DIRconfig.php: $perms"
     else
-        echo "   $MOODLE_DIR/config.php: ❌ NOT FOUND"
+        echo "   $MOODLE_DIRconfig.php: ❌ NOT FOUND"
     fi
     
     echo ""
     echo "📁 CLI scripts:"
-    if [ -d "$MOODLE_DIR/admin/cli" ]; then
-        local cli_scripts=$(find "$MOODLE_DIR/admin/cli" -name "*.php" | head -3)
+    if [ -d "$MOODLE_DIRadmin/cli" ]; then
+        local cli_scripts=$(find "$MOODLE_DIRadmin/cli" -name "*.php" | head -3)
         if [ -n "$cli_scripts" ]; then
             echo "   First 3 CLI scripts:"
             while IFS= read -r script; do
@@ -178,7 +178,7 @@ show_moodle5_permissions() {
     local moodle5_dirs=("cache" "temp" "lock" "tasks" "localcache" "sessions" "lang" "h5p" "backup" "restore" "trash" "webservice")
     
     for dir in "${moodle5_dirs[@]}"; do
-        local full_path="$MOODLEDATA_DIR/$dir"
+        local full_path="$MOODLEDATA_DIR$dir"
         if [ -d "$full_path" ]; then
             perms=$(stat -c "%a %U:%G" "$full_path")
             echo "   $full_path: $perms"
@@ -189,17 +189,17 @@ show_moodle5_permissions() {
     
     echo ""
     echo "📁 config.php file:"
-    if [ -f "$MOODLE_DIR/config.php" ]; then
-        perms=$(stat -c "%a %U:%G" "$MOODLE_DIR/config.php")
-        echo "   $MOODLE_DIR/config.php: $perms"
+    if [ -f "$MOODLE_DIRconfig.php" ]; then
+        perms=$(stat -c "%a %U:%G" "$MOODLE_DIRconfig.php")
+        echo "   $MOODLE_DIRconfig.php: $perms"
     else
-        echo "   $MOODLE_DIR/config.php: ❌ NOT FOUND"
+        echo "   $MOODLE_DIRconfig.php: ❌ NOT FOUND"
     fi
     
     echo ""
     echo "📁 CLI scripts:"
-    if [ -d "$MOODLE_DIR/admin/cli" ]; then
-        local cli_scripts=$(find "$MOODLE_DIR/admin/cli" -name "*.php" | head -3)
+    if [ -d "$MOODLE_DIRadmin/cli" ]; then
+        local cli_scripts=$(find "$MOODLE_DIRadmin/cli" -name "*.php" | head -3)
         if [ -n "$cli_scripts" ]; then
             echo "   First 3 CLI scripts:"
             while IFS= read -r script; do
@@ -258,7 +258,7 @@ create_moodle4_directories() {
     local moodle4_dirs=("cache" "temp" "sessions" "lang" "h5p" "backup" "restore" "trashdir" "webservice" "filedir" "repository" "log")
     
     for dir in "${moodle4_dirs[@]}"; do
-        local full_path="$MOODLEDATA_DIR/$dir"
+        local full_path="$MOODLEDATA_DIR$dir"
         if create_directory_if_missing "$full_path"; then
             echo "   ✅ Created: $dir"
         else
@@ -274,7 +274,7 @@ create_moodle5_directories() {
     local moodle5_dirs=("cache" "temp" "lock" "tasks" "localcache" "sessions" "lang" "h5p" "backup" "restore" "trash" "webservice")
     
     for dir in "${moodle5_dirs[@]}"; do
-        local full_path="$MOODLEDATA_DIR/$dir"
+        local full_path="$MOODLEDATA_DIR$dir"
         if create_directory_if_missing "$full_path"; then
             echo "   ✅ Created: $dir"
         else
@@ -290,8 +290,8 @@ set_moodle4_permissions() {
     local moodle4_dirs=("cache" "temp" "sessions" "lang" "h5p" "backup" "restore" "trashdir" "webservice" "filedir" "repository" "log")
     
     for dir in "${moodle4_dirs[@]}"; do
-        if [ -d "$MOODLEDATA_DIR/$dir" ]; then
-            chmod 770 "$MOODLEDATA_DIR/$dir"
+        if [ -d "$MOODLEDATA_DIR$dir" ]; then
+            chmod 770 "$MOODLEDATA_DIR$dir"
             echo "   ✅ $dir directory set to 770"
         fi
     done
@@ -304,8 +304,8 @@ set_moodle5_permissions() {
     local moodle5_dirs=("cache" "temp" "lock" "tasks" "localcache" "sessions" "lang" "h5p" "backup" "restore" "trash" "webservice")
     
     for dir in "${moodle5_dirs[@]}"; do
-        if [ -d "$MOODLEDATA_DIR/$dir" ]; then
-            chmod 770 "$MOODLEDATA_DIR/$dir"
+        if [ -d "$MOODLEDATA_DIR$dir" ]; then
+            chmod 770 "$MOODLEDATA_DIR$dir"
             echo "   ✅ $dir directory set to 770"
         fi
     done
@@ -318,10 +318,10 @@ dry_run_moodle4() {
     local moodle4_dirs=("cache" "temp" "sessions" "lang" "h5p" "backup" "restore" "trashdir" "webservice" "filedir" "repository" "log")
     
     for dir in "${moodle4_dirs[@]}"; do
-        if [ -d "$MOODLEDATA_DIR/$dir" ]; then
-            echo "   chmod 770 \"$MOODLEDATA_DIR/$dir\""
+        if [ -d "$MOODLEDATA_DIR$dir" ]; then
+            echo "   chmod 770 \"$MOODLEDATA_DIR$dir\""
         else
-            echo "   mkdir -p \"$MOODLEDATA_DIR/$dir\" && chmod 770 \"$MOODLEDATA_DIR/$dir\""
+            echo "   mkdir -p \"$MOODLEDATA_DIR$dir\" && chmod 770 \"$MOODLEDATA_DIR$dir\""
         fi
     done
     
@@ -340,10 +340,10 @@ dry_run_moodle5() {
     local moodle5_dirs=("cache" "temp" "lock" "tasks" "localcache" "sessions" "lang" "h5p" "backup" "restore" "trash" "webservice")
     
     for dir in "${moodle5_dirs[@]}"; do
-        if [ -d "$MOODLEDATA_DIR/$dir" ]; then
-            echo "   chmod 770 \"$MOODLEDATA_DIR/$dir\""
+        if [ -d "$MOODLEDATA_DIR$dir" ]; then
+            echo "   chmod 770 \"$MOODLEDATA_DIR$dir\""
         else
-            echo "   mkdir -p \"$MOODLEDATA_DIR/$dir\" && chmod 770 \"$MOODLEDATA_DIR/$dir\""
+            echo "   mkdir -p \"$MOODLEDATA_DIR$dir\" && chmod 770 \"$MOODLEDATA_DIR$dir\""
         fi
     done
     
@@ -369,16 +369,16 @@ dry_run() {
     echo "   find \"$MOODLEDATA_DIR\" -type d -exec chmod 770 {} \\;"
     echo "   find \"$MOODLEDATA_DIR\" -type f -exec chmod 660 {} \\;"
     
-    if [ -f "$MOODLE_DIR/config.php" ]; then
-        echo "   chmod 640 \"$MOODLE_DIR/config.php\""
+    if [ -f "$MOODLE_DIRconfig.php" ]; then
+        echo "   chmod 640 \"$MOODLE_DIRconfig.php\""
     else
         echo "   # config.php not found in $MOODLE_DIR (will be skipped)"
     fi
     
-    if [ -d "$MOODLE_DIR/admin/cli" ]; then
-        echo "   find \"$MOODLE_DIR/admin/cli\" -name \"*.php\" -exec chmod 755 {} \\;"
+    if [ -d "$MOODLE_DIRadmin/cli" ]; then
+        echo "   find \"$MOODLE_DIRadmin/cli\" -name \"*.php\" -exec chmod 755 {} \\;"
     else
-        echo "   # CLI directory not found in $MOODLE_DIR/admin/cli (will be skipped)"
+        echo "   # CLI directory not found in $MOODLE_DIRadmin/cli (will be skipped)"
     fi
     
     echo ""
@@ -487,9 +487,9 @@ find "$MOODLE_DIR" -type d -exec chmod 755 {} \;
 find "$MOODLE_DIR" -type f -exec chmod 644 {} \;
 
 # Check if config.php exists before modifying it
-if [ -f "$MOODLE_DIR/config.php" ]; then
+if [ -f "$MOODLE_DIRconfig.php" ]; then
     echo "🔒 Protecting config.php..."
-    chmod 640 "$MOODLE_DIR/config.php"
+    chmod 640 "$MOODLE_DIRconfig.php"
 else
     echo "⚠️  Warning: config.php not found in $MOODLE_DIR"
 fi
@@ -499,8 +499,8 @@ find "$MOODLEDATA_DIR" -type d -exec chmod 770 {} \;
 find "$MOODLEDATA_DIR" -type f -exec chmod 660 {} \;
 
 # CLI scripts (common to both versions)
-if [ -d "$MOODLE_DIR/admin/cli" ]; then
-    find "$MOODLE_DIR/admin/cli" -name "*.php" -exec chmod 755 {} \;
+if [ -d "$MOODLE_DIRadmin/cli" ]; then
+    find "$MOODLE_DIRadmin/cli" -name "*.php" -exec chmod 755 {} \;
     echo "✅ CLI scripts set as executable"
 fi
 
@@ -529,9 +529,9 @@ else
 fi
 
 for dir in "${specific_dirs[@]}"; do
-    if [ -d "$MOODLEDATA_DIR/$dir" ]; then
-        perms=$(stat -c "%a %U:%G" "$MOODLEDATA_DIR/$dir")
-        echo "   📁 $MOODLEDATA_DIR/$dir: $perms"
+    if [ -d "$MOODLEDATA_DIR$dir" ]; then
+        perms=$(stat -c "%a %U:%G" "$MOODLEDATA_DIR$dir")
+        echo "   📁 $MOODLEDATA_DIR$dir: $perms"
     fi
 done
 
