@@ -18,7 +18,7 @@ set -e  # Exit immediately on error
 
 # Default configurations
 MOODLE_DIR="/var/www/moodle"
-MOODLEDATA_DIR="/var/moodledata"
+MOODLEDATA_DIR="/var/www/moodledata"
 WWW_USER="www-data"
 WWW_GROUP="www-data"
 
@@ -120,7 +120,7 @@ show_moodle4_permissions() {
     local moodle4_dirs=("cache" "temp" "sessions" "lang" "h5p" "backup" "restore" "trashdir" "webservice" "filedir" "repository" "log")
     
     for dir in "${moodle4_dirs[@]}"; do
-        local full_path="$MOODLEDATA_DIR$dir"
+        local full_path="$MOODLEDATA_DIR/$dir"
         if [ -d "$full_path" ]; then
             perms=$(stat -c "%a %U:%G" "$full_path")
             echo "   $full_path: $perms"
@@ -178,7 +178,7 @@ show_moodle5_permissions() {
     local moodle5_dirs=("cache" "temp" "lock" "tasks" "localcache" "sessions" "lang" "h5p" "backup" "restore" "trash" "webservice")
     
     for dir in "${moodle5_dirs[@]}"; do
-        local full_path="$MOODLEDATA_DIR$dir"
+        local full_path="$MOODLEDATA_DIR/$dir"
         if [ -d "$full_path" ]; then
             perms=$(stat -c "%a %U:%G" "$full_path")
             echo "   $full_path: $perms"
@@ -258,7 +258,7 @@ create_moodle4_directories() {
     local moodle4_dirs=("cache" "temp" "sessions" "lang" "h5p" "backup" "restore" "trashdir" "webservice" "filedir" "repository" "log")
     
     for dir in "${moodle4_dirs[@]}"; do
-        local full_path="$MOODLEDATA_DIR$dir"
+        local full_path="$MOODLEDATA_DIR/$dir"
         if create_directory_if_missing "$full_path"; then
             echo "   ✅ Created: $dir"
         else
@@ -274,7 +274,7 @@ create_moodle5_directories() {
     local moodle5_dirs=("cache" "temp" "lock" "tasks" "localcache" "sessions" "lang" "h5p" "backup" "restore" "trash" "webservice")
     
     for dir in "${moodle5_dirs[@]}"; do
-        local full_path="$MOODLEDATA_DIR$dir"
+        local full_path="$MOODLEDATA_DIR/$dir"
         if create_directory_if_missing "$full_path"; then
             echo "   ✅ Created: $dir"
         else
@@ -290,8 +290,8 @@ set_moodle4_permissions() {
     local moodle4_dirs=("cache" "temp" "sessions" "lang" "h5p" "backup" "restore" "trashdir" "webservice" "filedir" "repository" "log")
     
     for dir in "${moodle4_dirs[@]}"; do
-        if [ -d "$MOODLEDATA_DIR$dir" ]; then
-            chmod 770 "$MOODLEDATA_DIR$dir"
+        if [ -d "$MOODLEDATA_DIR/$dir" ]; then
+            chmod 770 "$MOODLEDATA_DIR/$dir"
             echo "   ✅ $dir directory set to 770"
         fi
     done
@@ -304,8 +304,8 @@ set_moodle5_permissions() {
     local moodle5_dirs=("cache" "temp" "lock" "tasks" "localcache" "sessions" "lang" "h5p" "backup" "restore" "trash" "webservice")
     
     for dir in "${moodle5_dirs[@]}"; do
-        if [ -d "$MOODLEDATA_DIR$dir" ]; then
-            chmod 770 "$MOODLEDATA_DIR$dir"
+        if [ -d "$MOODLEDATA_DIR/$dir" ]; then
+            chmod 770 "$MOODLEDATA_DIR/$dir"
             echo "   ✅ $dir directory set to 770"
         fi
     done
@@ -318,10 +318,10 @@ dry_run_moodle4() {
     local moodle4_dirs=("cache" "temp" "sessions" "lang" "h5p" "backup" "restore" "trashdir" "webservice" "filedir" "repository" "log")
     
     for dir in "${moodle4_dirs[@]}"; do
-        if [ -d "$MOODLEDATA_DIR$dir" ]; then
-            echo "   chmod 770 \"$MOODLEDATA_DIR$dir\""
+        if [ -d "$MOODLEDATA_DIR/$dir" ]; then
+            echo "   chmod 770 \"$MOODLEDATA_DIR/$dir\""
         else
-            echo "   mkdir -p \"$MOODLEDATA_DIR$dir\" && chmod 770 \"$MOODLEDATA_DIR$dir\""
+            echo "   mkdir -p \"$MOODLEDATA_DIR/$dir\" && chmod 770 \"$MOODLEDATA_DIR/$dir\""
         fi
     done
     
@@ -340,10 +340,10 @@ dry_run_moodle5() {
     local moodle5_dirs=("cache" "temp" "lock" "tasks" "localcache" "sessions" "lang" "h5p" "backup" "restore" "trash" "webservice")
     
     for dir in "${moodle5_dirs[@]}"; do
-        if [ -d "$MOODLEDATA_DIR$dir" ]; then
-            echo "   chmod 770 \"$MOODLEDATA_DIR$dir\""
+        if [ -d "$MOODLEDATA_DIR/$dir" ]; then
+            echo "   chmod 770 \"$MOODLEDATA_DIR/$dir\""
         else
-            echo "   mkdir -p \"$MOODLEDATA_DIR$dir\" && chmod 770 \"$MOODLEDATA_DIR$dir\""
+            echo "   mkdir -p \"$MOODLEDATA_DIR/$dir\" && chmod 770 \"$MOODLEDATA_DIR/$dir\""
         fi
     done
     
@@ -529,9 +529,9 @@ else
 fi
 
 for dir in "${specific_dirs[@]}"; do
-    if [ -d "$MOODLEDATA_DIR$dir" ]; then
-        perms=$(stat -c "%a %U:%G" "$MOODLEDATA_DIR$dir")
-        echo "   📁 $MOODLEDATA_DIR$dir: $perms"
+    if [ -d "$MOODLEDATA_DIR/$dir" ]; then
+        perms=$(stat -c "%a %U:%G" "$MOODLEDATA_DIR/$dir")
+        echo "   📁 $MOODLEDATA_DIR/$dir: $perms"
     fi
 done
 
