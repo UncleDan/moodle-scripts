@@ -4,10 +4,8 @@
 # Supports Moodle 4.x and 5.x
 # ========================================================
 
-# Ubuntu-style release variable (SCRIPT RELEASE)
-SCRIPT_RELEASE="25.10"
-SCRIPT_CODENAME="Universal Hawk"
-SCRIPT_DATE="2025-10-25"
+# SCRIPT RELEASE INFORMATION
+SCRIPT_RELEASE="25.11"
 SCRIPT_AUTHOR="Daniele Lolli (UncleDan)"
 SCRIPT_LICENSE="GPL-3.0"
 
@@ -28,10 +26,10 @@ MOODLE_VERSION="$DEFAULT_MOODLE_VERSION"
 # Function to show header
 show_header() {
     echo "================================================================================"
-    echo "Moodle Permissions Manager v${SCRIPT_RELEASE} (${SCRIPT_CODENAME})"
+    echo "Moodle Permissions Manager v${SCRIPT_RELEASE}"
     echo "================================================================================"
     echo "Author: ${SCRIPT_AUTHOR}"
-    echo "Release: ${SCRIPT_RELEASE} - ${SCRIPT_DATE}"
+    echo "Release: ${SCRIPT_RELEASE}
     echo "License: ${SCRIPT_LICENSE}"
     echo "Default Moodle Version: ${DEFAULT_MOODLE_VERSION}.x"
     echo "Selected Moodle Version: ${MOODLE_VERSION}.x"
@@ -71,8 +69,6 @@ show_help() {
 # Function to show version
 show_version() {
     echo "Moodle Permissions Manager v${SCRIPT_RELEASE}"
-    echo "Codename: ${SCRIPT_CODENAME}"
-    echo "Release Date: ${SCRIPT_DATE}"
     echo "Author: ${SCRIPT_AUTHOR}"
     echo "License: ${SCRIPT_LICENSE}"
     echo "Default Moodle Version: ${DEFAULT_MOODLE_VERSION}.x"
@@ -479,7 +475,7 @@ apply_fixes() {
     echo "✅ Moodle ${MOODLE_VERSION}.x permissions set correctly!"
     echo ""
     echo "📋 Configuration summary:"
-    echo "   - Script version: ${SCRIPT_RELEASE} (${SCRIPT_CODENAME})"
+    echo "   - Script version: ${SCRIPT_RELEASE}"
     echo "   - Moodle version: ${MOODLE_VERSION}.x"
     echo "   - Moodle dir: $MOODLE_DIR (755/644)"
     echo "   - Moodledata: $MOODLEDATA_DIR (770/660)" 
