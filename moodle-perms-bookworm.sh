@@ -29,7 +29,7 @@ show_header() {
     echo "Moodle Permissions Manager v${SCRIPT_RELEASE}"
     echo "================================================================================"
     echo "Author: ${SCRIPT_AUTHOR}"
-    echo "Release: ${SCRIPT_RELEASE}
+    echo "Release: ${SCRIPT_RELEASE}"
     echo "License: ${SCRIPT_LICENSE}"
     echo "Default Moodle Version: ${DEFAULT_MOODLE_VERSION}.x"
     echo "Selected Moodle Version: ${MOODLE_VERSION}.x"
