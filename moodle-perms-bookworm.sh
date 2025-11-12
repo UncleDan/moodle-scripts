@@ -4,10 +4,8 @@
 # Supports Moodle 4.x and 5.x
 # ========================================================
 
-# Ubuntu-style release variable (SCRIPT RELEASE)
-SCRIPT_RELEASE="25.10"
-SCRIPT_CODENAME="Universal Hawk"
-SCRIPT_DATE="2025-10-25"
+# SCRIPT RELEASE INFORMATION
+SCRIPT_RELEASE="25.11"
 SCRIPT_AUTHOR="Daniele Lolli (UncleDan)"
 SCRIPT_LICENSE="GPL-3.0"
 
@@ -28,10 +26,10 @@ MOODLE_VERSION="$DEFAULT_MOODLE_VERSION"
 # Function to show header
 show_header() {
     echo "================================================================================"
-    echo "Moodle Permissions Manager v${SCRIPT_RELEASE} (${SCRIPT_CODENAME})"
+    echo "Moodle Permissions Manager v${SCRIPT_RELEASE}"
     echo "================================================================================"
     echo "Author: ${SCRIPT_AUTHOR}"
-    echo "Release: ${SCRIPT_RELEASE} - ${SCRIPT_DATE}"
+    echo "Release: ${SCRIPT_RELEASE}
     echo "License: ${SCRIPT_LICENSE}"
     echo "Default Moodle Version: ${DEFAULT_MOODLE_VERSION}.x"
     echo "Selected Moodle Version: ${MOODLE_VERSION}.x"
@@ -48,28 +46,29 @@ show_help() {
     echo "  -v, --version           Show version information"
     echo "  -d, --dry-run           Simulate operations without applying changes"
     echo "  -s, --show-perms        Show current permissions without modifying"
+    echo "  -f, --fix               Apply permissions fixes (required for changes)"
     echo "  -mp, --moodlepath PATH  Specify Moodle installation path"
     echo "  -md, --moodledata PATH  Specify moodledata path"
     echo "  -mv, --moodleversion VERSION Specify Moodle version (4|5)"
     echo ""
     echo "Examples:"
-    echo "  $0                               # Use default version (Moodle ${DEFAULT_MOODLE_VERSION})"
-    echo "  $0 -mv 5                         # Force Moodle version 5"
-    echo "  $0 -mv 4 -d                      # Moodle 4 in dry-run mode"
-    echo "  $0 -mv 5 -s                      # Show current permissions for Moodle 5"
-    echo "  $0 -mp /opt/moodle -mv 5         # Custom path + version"
-    echo "  $0 -mp /opt/moodle -md /opt/moodledata -mv 4 -s  # All parameters + show"
+    echo "  $0                               # Show current permissions (default)"
+    echo "  $0 --fix                         # Apply permissions fixes"
+    echo "  $0 -f                            # Apply permissions fixes (short)"
+    echo "  $0 --fix -mv 5                   # Fix permissions for Moodle 5"
+    echo "  $0 --fix -d                      # Dry-run for fix operations"
+    echo "  $0 -mv 5 -s                      # Show permissions for Moodle 5"
+    echo "  $0 --fix -mp /opt/moodle -mv 5   # Custom path + version + fix"
     echo ""
     echo "Notes:"
     echo "  Default Moodle version: ${DEFAULT_MOODLE_VERSION}.x"
     echo "  Script version: ${SCRIPT_RELEASE}"
+    echo "  ⚠️  Without --fix/-f parameter, only shows permissions (safe mode)"
 }
 
 # Function to show version
 show_version() {
     echo "Moodle Permissions Manager v${SCRIPT_RELEASE}"
-    echo "Codename: ${SCRIPT_CODENAME}"
-    echo "Release Date: ${SCRIPT_DATE}"
     echo "Author: ${SCRIPT_AUTHOR}"
     echo "License: ${SCRIPT_LICENSE}"
     echo "Default Moodle Version: ${DEFAULT_MOODLE_VERSION}.x"
@@ -400,9 +399,116 @@ dry_run() {
     exit 0
 }
 
+# Function to apply fixes
+apply_fixes() {
+    echo "🛠️  Applying permissions fixes..."
+    
+    echo "🔍 Verifying main directories..."
+    check_main_directories
+
+    echo "📁 Creating critical directories..."
+    # Create critical directories based on version
+    if [ "$MOODLE_VERSION" = "4" ]; then
+        create_moodle4_directories
+    else
+        create_moodle5_directories
+    fi
+
+    echo "👤 Setting ownership..."
+    chown -R ${WWW_USER}:${WWW_GROUP} "$MOODLE_DIR"
+    chown -R ${WWW_USER}:${WWW_GROUP} "$MOODLEDATA_DIR"
+
+    echo "📁 Setting base Moodle permissions..."
+    find "$MOODLE_DIR" -type d -exec chmod 755 {} \;
+    find "$MOODLE_DIR" -type f -exec chmod 644 {} \;
+
+    # Check if config.php exists before modifying it
+    if [ -f "$MOODLE_DIR/config.php" ]; then
+        echo "🔒 Protecting config.php..."
+        chmod 640 "$MOODLE_DIR/config.php"
+    else
+        echo "⚠️  Warning: config.php not found in $MOODLE_DIR"
+    fi
+
+    echo "💾 Setting moodledata permissions..."
+    find "$MOODLEDATA_DIR" -type d -exec chmod 770 {} \;
+    find "$MOODLEDATA_DIR" -type f -exec chmod 660 {} \;
+
+    # CLI scripts (common to both versions)
+    if [ -d "$MOODLE_DIR/admin/cli" ]; then
+        find "$MOODLE_DIR/admin/cli" -name "*.php" -exec chmod 755 {} \;
+        echo "✅ CLI scripts set as executable"
+    fi
+
+    # Setting version-specific permissions
+    if [ "$MOODLE_VERSION" = "4" ]; then
+        set_moodle4_permissions
+    else
+        set_moodle5_permissions
+    fi
+
+    # Verify critical directory permissions
+    echo "🔍 Verifying critical directory permissions..."
+    for dir in "$MOODLEDATA_DIR" "$MOODLE_DIR"; do
+        if [ -d "$dir" ]; then
+            perms=$(stat -c "%a %U:%G" "$dir")
+            echo "   📁 $dir: $perms"
+        fi
+    done
+
+    # Verify specific directory permissions
+    echo "🔍 Verifying specific Moodle ${MOODLE_VERSION} directory permissions..."
+    if [ "$MOODLE_VERSION" = "4" ]; then
+        specific_dirs=("cache" "temp" "sessions" "lang" "h5p" "backup" "restore" "trashdir" "filedir" "repository" "log")
+    else
+        specific_dirs=("cache" "temp" "lock" "tasks" "localcache" "sessions" "lang" "h5p" "backup" "restore" "trash")
+    fi
+
+    for dir in "${specific_dirs[@]}"; do
+        if [ -d "$MOODLEDATA_DIR/$dir" ]; then
+            perms=$(stat -c "%a %U:%G" "$MOODLEDATA_DIR/$dir")
+            echo "   📁 $MOODLEDATA_DIR/$dir: $perms"
+        fi
+    done
+
+    echo ""
+    echo "✅ Moodle ${MOODLE_VERSION}.x permissions set correctly!"
+    echo ""
+    echo "📋 Configuration summary:"
+    echo "   - Script version: ${SCRIPT_RELEASE}"
+    echo "   - Moodle version: ${MOODLE_VERSION}.x"
+    echo "   - Moodle dir: $MOODLE_DIR (755/644)"
+    echo "   - Moodledata: $MOODLEDATA_DIR (770/660)" 
+    echo "   - Owner: $WWW_USER:$WWW_GROUP"
+    echo "   - config.php: 640 (if present)"
+    echo "   - CLI scripts: 755"
+    echo ""
+
+    # Version-specific notes
+    if [ "$MOODLE_VERSION" = "4" ]; then
+        echo "⚠️  Important notes for Moodle 4:"
+        echo "   - PHP 7.4/8.0 required (8.0+ recommended)"
+        echo "   - MySQL 5.7+ or PostgreSQL 9.5+ or MariaDB 10.4+"
+        echo "   - Specific directories: trashdir/, filedir/, repository/"
+    else
+        echo "⚠️  Important notes for Moodle 5:"
+        echo "   - PHP 8.1+ required"
+        echo "   - MySQL 8.0+ or PostgreSQL 13+ or MariaDB 10.6+ recommended"
+        echo "   - Specific directories: trash/, localcache/, lock/, tasks/"
+    fi
+
+    echo "   - Check logs in $MOODLEDATA_DIR for errors"
+    echo ""
+    echo "================================================================================"
+    echo "Moodle Permissions Manager v${SCRIPT_RELEASE} - Operation completed"
+    echo "Moodle ${MOODLE_VERSION}.x - Configuration applied successfully"
+    echo "================================================================================"
+}
+
 # Argument parsing
 DRY_RUN=false
 SHOW_PERMS=false
+APPLY_FIXES=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help)
@@ -419,6 +525,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -s|--show-perms)
             SHOW_PERMS=true
+            shift
+            ;;
+        -f|--fix)
+            APPLY_FIXES=true
             shift
             ;;
         -mp|--moodlepath)
@@ -451,10 +561,12 @@ echo "   - Moodle Directory: $MOODLE_DIR"
 echo "   - Moodledata Directory: $MOODLEDATA_DIR"
 echo ""
 
-# Verify script is run as root (except for show-perms)
-if [ "$SHOW_PERMS" = false ] && [ "$(id -u)" -ne 0 ]; then
-    echo "❌ This script must be run as root"
-    exit 1
+# Default behavior: if no action specified, show permissions
+if [ "$DRY_RUN" = false ] && [ "$SHOW_PERMS" = false ] && [ "$APPLY_FIXES" = false ]; then
+    echo "ℹ️  No action specified. Defaulting to show permissions mode."
+    echo "   Use --fix/-f to apply changes or --dry-run to simulate."
+    echo ""
+    SHOW_PERMS=true
 fi
 
 # Execute show-perms if requested
@@ -462,108 +574,18 @@ if [ "$SHOW_PERMS" = true ]; then
     show_current_permissions
 fi
 
+# Verify script is run as root for fix operations
+if [ "$APPLY_FIXES" = true ] && [ "$(id -u)" -ne 0 ]; then
+    echo "❌ This script must be run as root to apply fixes"
+    exit 1
+fi
+
 # Execute dry-run if requested
 if [ "$DRY_RUN" = true ]; then
     dry_run
 fi
 
-echo "🔍 Verifying main directories..."
-check_main_directories
-
-echo "📁 Creating critical directories..."
-# Create critical directories based on version
-if [ "$MOODLE_VERSION" = "4" ]; then
-    create_moodle4_directories
-else
-    create_moodle5_directories
+# Execute fix if requested
+if [ "$APPLY_FIXES" = true ]; then
+    apply_fixes
 fi
-
-echo "👤 Setting ownership..."
-chown -R ${WWW_USER}:${WWW_GROUP} "$MOODLE_DIR"
-chown -R ${WWW_USER}:${WWW_GROUP} "$MOODLEDATA_DIR"
-
-echo "📁 Setting base Moodle permissions..."
-find "$MOODLE_DIR" -type d -exec chmod 755 {} \;
-find "$MOODLE_DIR" -type f -exec chmod 644 {} \;
-
-# Check if config.php exists before modifying it
-if [ -f "$MOODLE_DIR/config.php" ]; then
-    echo "🔒 Protecting config.php..."
-    chmod 640 "$MOODLE_DIR/config.php"
-else
-    echo "⚠️  Warning: config.php not found in $MOODLE_DIR"
-fi
-
-echo "💾 Setting moodledata permissions..."
-find "$MOODLEDATA_DIR" -type d -exec chmod 770 {} \;
-find "$MOODLEDATA_DIR" -type f -exec chmod 660 {} \;
-
-# CLI scripts (common to both versions)
-if [ -d "$MOODLE_DIR/admin/cli" ]; then
-    find "$MOODLE_DIR/admin/cli" -name "*.php" -exec chmod 755 {} \;
-    echo "✅ CLI scripts set as executable"
-fi
-
-# Setting version-specific permissions
-if [ "$MOODLE_VERSION" = "4" ]; then
-    set_moodle4_permissions
-else
-    set_moodle5_permissions
-fi
-
-# Verify critical directory permissions
-echo "🔍 Verifying critical directory permissions..."
-for dir in "$MOODLEDATA_DIR" "$MOODLE_DIR"; do
-    if [ -d "$dir" ]; then
-        perms=$(stat -c "%a %U:%G" "$dir")
-        echo "   📁 $dir: $perms"
-    fi
-done
-
-# Verify specific directory permissions
-echo "🔍 Verifying specific Moodle ${MOODLE_VERSION} directory permissions..."
-if [ "$MOODLE_VERSION" = "4" ]; then
-    specific_dirs=("cache" "temp" "sessions" "lang" "h5p" "backup" "restore" "trashdir" "filedir" "repository" "log")
-else
-    specific_dirs=("cache" "temp" "lock" "tasks" "localcache" "sessions" "lang" "h5p" "backup" "restore" "trash")
-fi
-
-for dir in "${specific_dirs[@]}"; do
-    if [ -d "$MOODLEDATA_DIR/$dir" ]; then
-        perms=$(stat -c "%a %U:%G" "$MOODLEDATA_DIR/$dir")
-        echo "   📁 $MOODLEDATA_DIR/$dir: $perms"
-    fi
-done
-
-echo ""
-echo "✅ Moodle ${MOODLE_VERSION}.x permissions set correctly!"
-echo ""
-echo "📋 Configuration summary:"
-echo "   - Script version: ${SCRIPT_RELEASE} (${SCRIPT_CODENAME})"
-echo "   - Moodle version: ${MOODLE_VERSION}.x"
-echo "   - Moodle dir: $MOODLE_DIR (755/644)"
-echo "   - Moodledata: $MOODLEDATA_DIR (770/660)" 
-echo "   - Owner: $WWW_USER:$WWW_GROUP"
-echo "   - config.php: 640 (if present)"
-echo "   - CLI scripts: 755"
-echo ""
-
-# Version-specific notes
-if [ "$MOODLE_VERSION" = "4" ]; then
-    echo "⚠️  Important notes for Moodle 4:"
-    echo "   - PHP 7.4/8.0 required (8.0+ recommended)"
-    echo "   - MySQL 5.7+ or PostgreSQL 9.5+ or MariaDB 10.4+"
-    echo "   - Specific directories: trashdir/, filedir/, repository/"
-else
-    echo "⚠️  Important notes for Moodle 5:"
-    echo "   - PHP 8.1+ required"
-    echo "   - MySQL 8.0+ or PostgreSQL 13+ or MariaDB 10.6+ recommended"
-    echo "   - Specific directories: trash/, localcache/, lock/, tasks/"
-fi
-
-echo "   - Check logs in $MOODLEDATA_DIR for errors"
-echo ""
-echo "================================================================================"
-echo "Moodle Permissions Manager v${SCRIPT_RELEASE} - Operation completed"
-echo "Moodle ${MOODLE_VERSION}.x - Configuration applied successfully"
-echo "================================================================================"
