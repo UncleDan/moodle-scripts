@@ -16,7 +16,7 @@ set -e  # Exit immediately on error
 
 # Default configurations
 MOODLE_DIR="/var/www/moodle"
-MOODLEDATA_DIR="/var/www/moodledata"
+MOODLEDATA_DIR="/var/moodledata"
 WWW_USER="www-data"
 WWW_GROUP="www-data"
 
