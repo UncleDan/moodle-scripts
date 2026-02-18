@@ -5,17 +5,16 @@
 # ========================================================
 
 # SCRIPT RELEASE INFORMATION
-SCRIPT_RELEASE="26.02" # Updated for 2026 standards
+SCRIPT_RELEASE="26.02"
 SCRIPT_AUTHOR="Daniele Lolli (UncleDan) & Gemini"
 SCRIPT_LICENSE="GPL-3.0"
 
-# Default configurations
-DEFAULT_MOODLE_VERSION="4"
+# Configuration (Defaults for paths, but NOT version)
 MOODLE_DIR="/var/www/moodle"
 MOODLEDATA_DIR="/var/moodledata"
+MOODLE_VERSION="" # Empty by default to force user input
 
 # 🔍 1. DYNAMIC WEB USER DETECTION
-# Detects the correct user for Debian/Ubuntu (www-data) or RHEL/CentOS (apache/nginx)
 if id "www-data" >/dev/null 2>&1; then
     WWW_USER="www-data"; WWW_GROUP="www-data"
 elif id "apache" >/dev/null 2>&1; then
@@ -23,11 +22,10 @@ elif id "apache" >/dev/null 2>&1; then
 elif id "nginx" >/dev/null 2>&1; then
     WWW_USER="nginx"; WWW_GROUP="nginx"
 else
-    WWW_USER="www-data"; WWW_GROUP="www-data" # Fallback
+    WWW_USER="www-data"; WWW_GROUP="www-data"
 fi
 
-set -e  # Exit immediately on error
-MOODLE_VERSION="$DEFAULT_MOODLE_VERSION"
+set -e
 
 # --- CORE FUNCTIONS ---
 
@@ -36,26 +34,29 @@ show_header() {
     echo "Moodle Permissions Manager v${SCRIPT_RELEASE}"
     echo "================================================================================"
     echo "Detected Web Environment: ${WWW_USER}:${WWW_GROUP}"
-    echo "Selected Moodle Version: ${MOODLE_VERSION}.x"
+    [ -n "$MOODLE_VERSION" ] && echo "Selected Moodle Version: ${MOODLE_VERSION}.x"
     echo "================================================================================"
 }
 
 show_help() {
-    echo "Usage: $0 [OPTIONS]"
+    echo "Usage: $0 -mv VERSION [OPTIONS]"
+    echo ""
+    echo "Required:"
+    echo "  -mv, --moodleversion V   Specify Moodle version (4|5)"
     echo ""
     echo "Options:"
     echo "  -h, --help               Show this help message"
     echo "  -d, --dry-run            Simulate operations"
     echo "  -f, --fix                Apply permissions fixes (requires root)"
     echo "  -c, --clear-cache        Purge Moodle caches after fixing"
-    echo "  -mp, --moodlepath PATH   Specify Moodle path"
-    echo "  -md, --moodledata PATH   Specify moodledata path"
-    echo "  -mv, --moodleversion V   Specify Moodle version (4|5)"
+    echo "  -mp, --moodlepath PATH   Specify Moodle path (Default: /var/www/moodle)"
+    echo "  -md, --moodledata PATH   Specify moodledata path (Default: /var/moodledata)"
 }
 
 validate_moodle_version() {
     if [[ "$1" != "4" && "$1" != "5" ]]; then
-        echo "❌ ERROR: Invalid Moodle version: '$1'. Use 4 or 5."
+        echo "❌ ERROR: Invalid Moodle version: '$1'."
+        echo "   Please use '4' for Moodle 4.x or '5' for Moodle 5.x"
         exit 1
     fi
 }
@@ -65,59 +66,43 @@ check_main_directories() {
     [ ! -d "$MOODLEDATA_DIR" ] && { echo "❌ ERROR: Moodledata path $MOODLEDATA_DIR not found"; exit 1; }
 }
 
-# 🧹 CACHE PURGE FUNCTION
 purge_moodle_cache() {
     echo "🧹 Purging Moodle caches..."
     if [ -f "$MOODLE_DIR/admin/cli/purge_caches.php" ]; then
-        # Run as the web user to ensure new cache files have correct ownership
         sudo -u "$WWW_USER" php "$MOODLE_DIR/admin/cli/purge_caches.php"
         echo "✅ Cache purged successfully."
     else
-        echo "⚠️  Could not find purge_caches.php. Deleting localcache/cache manually..."
-        rm -rf "$MOODLEDATA_DIR/cache/*"
-        rm -rf "$MOODLEDATA_DIR/localcache/*"
+        echo "⚠️  CLI purge script not found. Skipping cache purge."
     fi
 }
 
-# 🛠️ THE MASTER FIX FUNCTION
 apply_fixes() {
-    echo "🛠️  Applying optimized permissions..."
+    echo "🛠️  Applying optimized permissions for Moodle ${MOODLE_VERSION}.x..."
     check_main_directories
 
     # 1. Ownership
-    echo "👤 Setting ownership to $WWW_USER:$WWW_GROUP..."
     chown -R ${WWW_USER}:${WWW_GROUP} "$MOODLE_DIR"
     chown -R ${WWW_USER}:${WWW_GROUP} "$MOODLEDATA_DIR"
 
-    # 2. Moodle App Directory (755 for dirs, 644 for files)
-    # Using 'X' (capital) applies execute bit to folders but NOT files
-    echo "📁 Optimizing Moodle app permissions (Symbolic Mode)..."
+    # 2. Permissions (Smart Symbolic Mode)
+    # 
     chmod -R u=rwX,g=rX,o=rX "$MOODLE_DIR"
-
-    # 3. Moodledata (770 for dirs, 660 for files)
-    echo "💾 Optimizing moodledata permissions (Symbolic Mode)..."
     chmod -R u=rwX,g=rwX,o= "$MOODLEDATA_DIR"
 
-    # 4. Critical File Protection
-    if [ -f "$MOODLE_DIR/config.php" ]; then
-        echo "🔒 Hardening config.php..."
-        chmod 640 "$MOODLE_DIR/config.php"
-    fi
+    # 3. Hardening config.php
+    [ -f "$MOODLE_DIR/config.php" ] && chmod 640 "$MOODLE_DIR/config.php"
 
-    # 5. Security: .htaccess check
+    # 4. Security .htaccess
     if [ ! -f "$MOODLEDATA_DIR/.htaccess" ]; then
-        echo "🔒 Creating security .htaccess in moodledata..."
         echo "deny from all" > "$MOODLEDATA_DIR/.htaccess"
         chown ${WWW_USER}:${WWW_GROUP} "$MOODLEDATA_DIR/.htaccess"
         chmod 660 "$MOODLEDATA_DIR/.htaccess"
     fi
 
-    # 6. CLI Executability
-    if [ -d "$MOODLE_DIR/admin/cli" ]; then
-        chmod -R +x "$MOODLE_DIR/admin/cli"
-    fi
+    # 5. CLI Executability
+    [ -d "$MOODle_DIR/admin/cli" ] && chmod -R +x "$MOODLE_DIR/admin/cli"
 
-    # 7. Version-specific Directory Creation
+    # 6. Version-specific Directory Maintenance
     if [ "$MOODLE_VERSION" = "4" ]; then
         local dirs=("cache" "temp" "sessions" "lang" "h5p" "filedir")
     else
@@ -129,12 +114,10 @@ apply_fixes() {
             mkdir -p "$MOODLEDATA_DIR/$dir"
             chown ${WWW_USER}:${WWW_GROUP} "$MOODLEDATA_DIR/$dir"
             chmod 770 "$MOODLEDATA_DIR/$dir"
-            echo "✅ Created missing directory: $dir"
         fi
     done
 
-    echo "================================================================================"
-    echo "✅ Moodle ${MOODLE_VERSION}.x setup complete!"
+    echo "✅ Operation completed successfully."
 }
 
 # --- ARGUMENT PARSING ---
@@ -155,20 +138,30 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# --- EXECUTION FLOW ---
+# --- FINAL VALIDATION ---
+if [ -z "$MOODLE_VERSION" ]; then
+    show_header
+    echo "❌ ERROR: Moodle version is required."
+    echo "   You must specify -mv 4 or -mv 5."
+    echo ""
+    show_help
+    exit 1
+fi
+
+# --- EXECUTION ---
 show_header
 
 if [ "$APPLY_FIXES" = true ]; then
     if [ "$(id -u)" -ne 0 ]; then
-        echo "❌ This script must be run as root (sudo) to apply fixes."
+        echo "❌ Error: Root privileges required for --fix."
         exit 1
     fi
     apply_fixes
     [ "$CLEAR_CACHE" = true ] && purge_moodle_cache
 elif [ "$DRY_RUN" = true ]; then
-    echo "🔍 DRY RUN: Would set ownership to $WWW_USER and apply symbolic permissions."
-    echo "   - Moodle App -> u=rwX,g=rX,o=rX"
-    echo "   - Moodledata -> u=rwX,g=rwX,o="
+    echo "🔍 DRY RUN: Simulation for Moodle ${MOODLE_VERSION}.x"
+    echo "   - Paths: $MOODLE_DIR | $MOODLEDATA_DIR"
+    echo "   - Would apply symbolic permissions (rwX) and verify security files."
 else
-    show_help
+    echo "ℹ️  No action specified. Use --fix to apply changes or --dry-run to simulate."
 fi
