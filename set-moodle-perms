@@ -244,7 +244,6 @@ apply_fixes() {
     echo "→ Verifica/creazione directory moodledata (${#dirs[@]} dir):"
     for dir in "${dirs[@]}"; do
         if [ ! -d "$MOODLEDATA_DIR/$dir" ]; then
-            echo "   + mkdir $MOODLEDATA_DIR/$dir"
             run_cmd mkdir -p "$MOODLEDATA_DIR/$dir" || {
                 echo "❌ ERRORE: mkdir fallito su $MOODLEDATA_DIR/$dir"
                 exit $EXIT_MKDIR_FAILED
@@ -257,6 +256,7 @@ apply_fixes() {
                 echo "❌ ERRORE: chmod 770 fallito su $MOODLEDATA_DIR/$dir"
                 exit $EXIT_CHMOD_FAILED
             }
+            echo "   + $dir (creata, ${WWW_USER}:${WWW_GROUP} 770)"
         else
             echo "   ✓ $dir"
         fi
