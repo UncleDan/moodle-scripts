@@ -1,62 +1,106 @@
 #!/bin/bash
 # ========================================================
 # Moodle Permissions Manager - Unified Script
-# Supports Moodle 4.x and 5.x
+# Supports MOODLE_405_STABLE, 500, 501, 502
 # ========================================================
 
 # SCRIPT RELEASE INFORMATION
-SCRIPT_RELEASE="26.02"
+SCRIPT_RELEASE="26.06"
 SCRIPT_AUTHOR="Daniele Lolli (UncleDan)"
 SCRIPT_LICENSE="GPL-3.0"
 
-set -e  # Exit immediately on error
+# Exit codes
+readonly EXIT_OK=0
+readonly EXIT_INVALID_ARGS=1
+readonly EXIT_NOT_ROOT=2
+readonly EXIT_DIR_NOT_FOUND=3
+readonly EXIT_UNKNOWN_VERSION=4
+readonly EXIT_CHMOD_FAILED=5
+readonly EXIT_CHOWN_FAILED=6
+readonly EXIT_MKDIR_FAILED=7
+readonly EXIT_CACHE_FAILED=8
 
-# Default configurations
+# Configuration defaults
 MOODLE_DIR="/var/www/moodle"
 MOODLEDATA_DIR="/var/moodledata"
-WWW_USER="www-data"
-WWW_GROUP="www-data"
+MOODLE_VERSION=""
+
+# Flags
+DRY_RUN=false
+APPLY_FIXES=false
+CLEAR_CACHE=false
+
+# --------------------------------------------------------
+# 1. DYNAMIC WEB USER DETECTION
+# --------------------------------------------------------
+if id "www-data" >/dev/null 2>&1; then
+    WWW_USER="www-data"; WWW_GROUP="www-data"
+elif id "apache" >/dev/null 2>&1; then
+    WWW_USER="apache"; WWW_GROUP="apache"
+elif id "nginx" >/dev/null 2>&1; then
+    WWW_USER="nginx"; WWW_GROUP="nginx"
+else
+    WWW_USER="www-data"; WWW_GROUP="www-data"
+fi
+
+# --------------------------------------------------------
+# HELPER: esegui o simula un comando
+# --------------------------------------------------------
+run_cmd() {
+    if [ "$DRY_RUN" = true ]; then
+        echo "   [DRY-RUN] $*"
+    else
+        "$@"
+    fi
+}
+
+# --------------------------------------------------------
+# CORE FUNCTIONS
+# --------------------------------------------------------
 
 # Function to show header
 show_header() {
     echo "================================================================================"
-    echo "Moodle Permissions Manager v${SCRIPT_RELEASE}"
+    echo " Moodle Permissions Manager v${SCRIPT_RELEASE}"
     echo "================================================================================"
-    echo "Author: ${SCRIPT_AUTHOR}"
-    echo "Release: ${SCRIPT_RELEASE}"
-    echo "License: ${SCRIPT_LICENSE}"
-    echo "Selected Moodle Version: ${MOODLE_VERSION}.x"
+    echo " Web user   : ${WWW_USER}:${WWW_GROUP}"
+    [ -n "$MOODLE_VERSION" ] && echo " Branch     : ${MOODLE_VERSION}"
+    echo " Moodle dir : ${MOODLE_DIR}"
+    echo " Data dir   : ${MOODLEDATA_DIR}"
+    [ "$DRY_RUN"  = true ] && echo " Mode       : DRY-RUN (nessuna modifica applicata)"
+    [ "$DRY_RUN"  = false ] && [ "$APPLY_FIXES" = true ] && echo " Mode       : FIX (modifiche reali)"
     echo "================================================================================"
     echo ""
 }
 
 # Function to show help
 show_help() {
-    echo "Usage: $0 [OPTIONS]"
+    echo "Uso: $0 -mv BRANCH [OPZIONI]"
     echo ""
-    echo "  -mv, --moodleversion VERSION Specify Moodle version (4|5)"
+    echo "Branch richiesti (-mv):"
+    echo "  405   MOODLE_405_STABLE"
+    echo "  500   MOODLE_500_STABLE"
+    echo "  501   MOODLE_501_STABLE"
+    echo "  502   MOODLE_502_STABLE"
     echo ""
-    echo "Options:"
-    echo "  -h, --help              Show this help message"
-    echo "  -v, --version           Show version information"
-    echo "  -d, --dry-run           Simulate operations without applying changes"
-    echo "  -s, --show-perms        Show current permissions without modifying"
-    echo "  -f, --fix               Apply permissions fixes (required for changes)"
-    echo "  -mp, --moodlepath PATH  Specify Moodle installation path"
-    echo "  -md, --moodledata PATH  Specify moodledata path"
+    echo "Opzioni:"
+    echo "  -h,  --help               Mostra questo messaggio"
+    echo "  -d,  --dry-run            Simula le operazioni senza applicarle"
+    echo "  -f,  --fix                Applica i fix (richiede root)"
+    echo "  -c,  --clear-cache        Svuota la cache Moodle dopo il fix"
+    echo "  -mp, --moodlepath PATH    Percorso Moodle (default: /var/www/moodle)"
+    echo "  -md, --moodledata PATH    Percorso moodledata (default: /var/moodledata)"
     echo ""
-    echo "Examples:"
-    echo "  $0                               # Show current permissions (default)"
-    echo "  $0 --fix                         # Apply permissions fixes"
-    echo "  $0 -f                            # Apply permissions fixes (short)"
-    echo "  $0 --fix -mv 5                   # Fix permissions for Moodle 5"
-    echo "  $0 --fix -d                      # Dry-run for fix operations"
-    echo "  $0 -mv 5 -s                      # Show permissions for Moodle 5"
-    echo "  $0 --fix -mp /opt/moodle -mv 5   # Custom path + version + fix"
-    echo ""
-    echo "Notes:"
-    echo "  Script version: ${SCRIPT_RELEASE}"
-    echo "  ⚠️  Without --fix/-f parameter, only shows permissions (safe mode)"
+    echo "Exit codes:"
+    echo "  0  Successo"
+    echo "  1  Argomenti non validi / versione mancante"
+    echo "  2  Root richiesto per --fix"
+    echo "  3  Directory non trovata"
+    echo "  4  Versione Moodle non riconosciuta"
+    echo "  5  Errore chmod"
+    echo "  6  Errore chown"
+    echo "  7  Errore mkdir"
+    echo "  8  Errore purge cache"
 }
 
 # Function to show version
@@ -70,82 +114,51 @@ show_version() {
 
 # Function to validate Moodle version
 validate_moodle_version() {
-    local version=$1
-    if [[ "$version" != "4" && "$version" != "5" ]]; then
-        echo "❌ ERROR: Invalid Moodle version: '$version'"
-        echo "   Use '4' for Moodle 4.x or '5' for Moodle 5.x"
-        exit 1
-    fi
+    case "$1" in
+        405|500|501|502) ;;
+        *)
+            echo "❌ ERRORE: Versione non riconosciuta: '$1'."
+            echo "   Valori accettati: 405 | 500 | 501 | 502"
+            exit $EXIT_UNKNOWN_VERSION
+            ;;
+    esac
+}
+
+# Restituisce la major version (4 o 5) dal branch
+get_major_version() {
+    case "$1" in
+        405) echo "4" ;;
+        500|501|502) echo "5" ;;
+    esac
 }
 
 # Function to check main directories existence
 check_main_directories() {
     if [ ! -d "$MOODLE_DIR" ]; then
-        echo "❌ ERROR: Moodle directory not found: $MOODLE_DIR"
-        exit 1
+        echo "❌ ERRORE: Directory Moodle non trovata: $MOODLE_DIR"
+        exit $EXIT_DIR_NOT_FOUND
     fi
-    
     if [ ! -d "$MOODLEDATA_DIR" ]; then
-        echo "❌ ERROR: Moodledata directory not found: $MOODLEDATA_DIR"
-        exit 1
+        echo "❌ ERRORE: Directory moodledata non trovata: $MOODLEDATA_DIR"
+        exit $EXIT_DIR_NOT_FOUND
     fi
 }
 
-# Function to show current permissions for Moodle 4
-show_moodle4_permissions() {
-    echo "🔍 Current Moodle 4 directory permissions:"
-    echo ""
-    
-    echo "📁 Main directories:"
-    for dir in "$MOODLE_DIR" "$MOODLEDATA_DIR"; do
-        if [ -d "$dir" ]; then
-            perms=$(stat -c "%a %U:%G" "$dir")
-            echo "   $dir: $perms"
-        else
-            echo "   $dir: ❌ NOT FOUND"
-        fi
-    done
-    
-    echo ""
-    echo "📁 Specific Moodle 4 directories:"
-    local moodle4_dirs=("cache" "temp" "sessions" "lang" "h5p" "backup" "restore" "trashdir" "webservice" "filedir" "repository" "log")
-    
-    for dir in "${moodle4_dirs[@]}"; do
-        local full_path="$MOODLEDATA_DIR/$dir"
-        if [ -d "$full_path" ]; then
-            perms=$(stat -c "%a %U:%G" "$full_path")
-            echo "   $full_path: $perms"
-        else
-            echo "   $full_path: 📁 DOES NOT EXIST"
-        fi
-    done
-    
-    echo ""
-    echo "📁 config.php file:"
-    if [ -f "$MOODLE_DIR/config.php" ]; then
-        perms=$(stat -c "%a %U:%G" "$MOODLE_DIR/config.php")
-        echo "   $MOODLE_DIR/config.php: $perms"
-    else
-        echo "   $MOODLE_DIR/config.php: ❌ NOT FOUND"
+purge_moodle_cache() {
+    echo "🧹 Svuotamento cache Moodle..."
+    local purge_script="$MOODLE_DIR/admin/cli/purge_caches.php"
+    if [ ! -f "$purge_script" ]; then
+        echo "⚠️  Script purge_caches.php non trovato. Cache non svuotata."
+        exit $EXIT_CACHE_FAILED
     fi
-    
-    echo ""
-    echo "📁 CLI scripts:"
-    if [ -d "$MOODLE_DIR/admin/cli" ]; then
-        local cli_scripts=$(find "$MOODLE_DIR/admin/cli" -name "*.php" | head -3)
-        if [ -n "$cli_scripts" ]; then
-            echo "   First 3 CLI scripts:"
-            while IFS= read -r script; do
-                if [ -f "$script" ]; then
-                    perms=$(stat -c "%a %U:%G" "$script")
-                    echo "   $script: $perms"
-                fi
-            done <<< "$cli_scripts"
-        else
-            echo "   No CLI scripts found"
-        fi
+    if [ "$DRY_RUN" = true ]; then
+        echo "   [DRY-RUN] sudo -u $WWW_USER php $purge_script"
     else
-        echo "   CLI directory not found"
+        sudo -u "$WWW_USER" php "$purge_script" || {
+            echo "❌ ERRORE: purge_caches.php fallito."
+            exit $EXIT_CACHE_FAILED
+        }
+        echo "✅ Cache svuotata."
     fi
 }
 
@@ -393,134 +406,142 @@ dry_run() {
 
 # Function to apply fixes
 apply_fixes() {
-    echo "🛠️  Applying permissions fixes..."
-    
-    echo "🔍 Verifying main directories..."
+    local major_version
+    major_version=$(get_major_version "$MOODLE_VERSION")
+
+    echo ""
+    echo "🛠️  Applicazione permessi per branch ${MOODLE_VERSION} (Moodle ${major_version}.x)..."
     check_main_directories
 
-    echo "📁 Creating critical directories..."
-    # Create critical directories based on version
-    if [ "$MOODLE_VERSION" = "4" ]; then
-        create_moodle4_directories
-    else
-        create_moodle5_directories
-    fi
+    # -- 1. Ownership --
+    echo "→ Ownership: ${WWW_USER}:${WWW_GROUP}"
+    run_cmd chown -R "${WWW_USER}:${WWW_GROUP}" "$MOODLE_DIR" || {
+        echo "❌ ERRORE: chown fallito su $MOODLE_DIR"
+        exit $EXIT_CHOWN_FAILED
+    }
+    run_cmd chown -R "${WWW_USER}:${WWW_GROUP}" "$MOODLEDATA_DIR" || {
+        echo "❌ ERRORE: chown fallito su $MOODLEDATA_DIR"
+        exit $EXIT_CHOWN_FAILED
+    }
 
-    echo "👤 Setting ownership..."
-    chown -R ${WWW_USER}:${WWW_GROUP} "$MOODLE_DIR"
-    chown -R ${WWW_USER}:${WWW_GROUP} "$MOODLEDATA_DIR"
+    # -- 2. Permessi base --
+    echo "→ Permessi MOODLE_DIR  : u=rwX,g=rX,o=rX"
+    run_cmd chmod -R u=rwX,g=rX,o=rX "$MOODLE_DIR" || {
+        echo "❌ ERRORE: chmod fallito su $MOODLE_DIR"
+        exit $EXIT_CHMOD_FAILED
+    }
 
-    echo "📁 Setting base Moodle permissions..."
-    find "$MOODLE_DIR" -type d -exec chmod 755 {} \;
-    find "$MOODLE_DIR" -type f -exec chmod 644 {} \;
+    echo "→ Permessi MOODLEDATA  : u=rwX,g=rwX,o="
+    run_cmd chmod -R u=rwX,g=rwX,o= "$MOODLEDATA_DIR" || {
+        echo "❌ ERRORE: chmod fallito su $MOODLEDATA_DIR"
+        exit $EXIT_CHMOD_FAILED
+    }
 
-    # Check if config.php exists before modifying it
+    # -- 3. Hardening config.php --
     if [ -f "$MOODLE_DIR/config.php" ]; then
-        echo "🔒 Protecting config.php..."
-        chmod 640 "$MOODLE_DIR/config.php"
-    else
-        echo "⚠️  Warning: config.php not found in $MOODLE_DIR"
+        echo "→ Hardening config.php → 640"
+        run_cmd chmod 640 "$MOODLE_DIR/config.php" || {
+            echo "❌ ERRORE: chmod 640 su config.php fallito"
+            exit $EXIT_CHMOD_FAILED
+        }
     fi
 
-    echo "💾 Setting moodledata permissions..."
-    find "$MOODLEDATA_DIR" -type d -exec chmod 770 {} \;
-    find "$MOODLEDATA_DIR" -type f -exec chmod 660 {} \;
+    # -- 4. .htaccess su moodledata --
+    if [ ! -f "$MOODLEDATA_DIR/.htaccess" ]; then
+        echo "→ Creazione .htaccess in moodledata"
+        if [ "$DRY_RUN" = false ]; then
+            echo "deny from all" > "$MOODLEDATA_DIR/.htaccess" || {
+                echo "❌ ERRORE: impossibile creare .htaccess"
+                exit $EXIT_CHMOD_FAILED
+            }
+            chown "${WWW_USER}:${WWW_GROUP}" "$MOODLEDATA_DIR/.htaccess"
+            chmod 660 "$MOODLEDATA_DIR/.htaccess"
+        else
+            echo "   [DRY-RUN] echo 'deny from all' > $MOODLEDATA_DIR/.htaccess"
+        fi
+    fi
+    # Avviso Nginx (il .htaccess non ha effetto)
+    if echo "$WWW_USER" | grep -q "nginx"; then
+        echo "⚠️  AVVISO: web user 'nginx' rilevato. Il file .htaccess non ha effetto"
+        echo "   su Nginx. Assicurati che la directory moodledata sia fuori dal webroot"
+        echo "   o protetta tramite blocco 'location' nella configurazione Nginx."
+    fi
 
-    # CLI scripts (common to both versions)
+    # -- 5. CLI scripts: solo i .php vanno resi eseguibili --
     if [ -d "$MOODLE_DIR/admin/cli" ]; then
-        find "$MOODLE_DIR/admin/cli" -name "*.php" -exec chmod 755 {} \;
-        echo "✅ CLI scripts set as executable"
+        echo "→ Eseguibilità admin/cli (solo *.php)"
+        run_cmd find "$MOODLE_DIR/admin/cli" -name "*.php" -exec chmod +x {} + || {
+            echo "❌ ERRORE: chmod +x su admin/cli fallito"
+            exit $EXIT_CHMOD_FAILED
+        }
     fi
 
-    # Setting version-specific permissions
-    if [ "$MOODLE_VERSION" = "4" ]; then
-        set_moodle4_permissions
+    # -- 6. Directory version-specific in moodledata --
+    # Moodle 4.x
+    local dirs_v4=("cache" "temp" "sessions" "lang" "h5p" "filedir" "trashdir")
+    # Moodle 5.x (aggiunge lock, tasks, localcache; mantiene filedir, lang, trashdir)
+    local dirs_v5=("cache" "temp" "sessions" "lang" "h5p" "filedir" "trashdir" "lock" "tasks" "localcache")
+
+    local dirs=()
+    if [ "$major_version" = "4" ]; then
+        dirs=("${dirs_v4[@]}")
     else
-        set_moodle5_permissions
+        dirs=("${dirs_v5[@]}")
     fi
 
-    # Verify critical directory permissions
-    echo "🔍 Verifying critical directory permissions..."
-    for dir in "$MOODLEDATA_DIR" "$MOODLE_DIR"; do
-        if [ -d "$dir" ]; then
-            perms=$(stat -c "%a %U:%G" "$dir")
-            echo "   📁 $dir: $perms"
+    echo "→ Verifica/creazione directory moodledata (${#dirs[@]} dir):"
+    for dir in "${dirs[@]}"; do
+        if [ ! -d "$MOODLEDATA_DIR/$dir" ]; then
+            echo "   + mkdir $MOODLEDATA_DIR/$dir"
+            run_cmd mkdir -p "$MOODLEDATA_DIR/$dir" || {
+                echo "❌ ERRORE: mkdir fallito su $MOODLEDATA_DIR/$dir"
+                exit $EXIT_MKDIR_FAILED
+            }
+            run_cmd chown "${WWW_USER}:${WWW_GROUP}" "$MOODLEDATA_DIR/$dir" || {
+                echo "❌ ERRORE: chown fallito su $MOODLEDATA_DIR/$dir"
+                exit $EXIT_CHOWN_FAILED
+            }
+            run_cmd chmod 770 "$MOODLEDATA_DIR/$dir" || {
+                echo "❌ ERRORE: chmod 770 fallito su $MOODLEDATA_DIR/$dir"
+                exit $EXIT_CHMOD_FAILED
+            }
+        else
+            echo "   ✓ $dir"
         fi
     done
 
-    # Verify specific directory permissions
-    echo "🔍 Verifying specific Moodle ${MOODLE_VERSION} directory permissions..."
-    if [ "$MOODLE_VERSION" = "4" ]; then
-        specific_dirs=("cache" "temp" "sessions" "lang" "h5p" "backup" "restore" "trashdir" "filedir" "repository" "log")
-    else
-        specific_dirs=("cache" "temp" "lock" "tasks" "localcache" "sessions" "lang" "h5p" "backup" "restore" "trash")
-    fi
-
-    for dir in "${specific_dirs[@]}"; do
-        if [ -d "$MOODLEDATA_DIR/$dir" ]; then
-            perms=$(stat -c "%a %U:%G" "$MOODLEDATA_DIR/$dir")
-            echo "   📁 $MOODLEDATA_DIR/$dir: $perms"
-        fi
-    done
-
     echo ""
-    echo "✅ Moodle ${MOODLE_VERSION}.x permissions set correctly!"
-    echo ""
-    echo "📋 Configuration summary:"
-    echo "   - Script version: ${SCRIPT_RELEASE}"
-    echo "   - Moodle version: ${MOODLE_VERSION}.x"
-    echo "   - Moodle dir: $MOODLE_DIR (755/644)"
-    echo "   - Moodledata: $MOODLEDATA_DIR (770/660)" 
-    echo "   - Owner: $WWW_USER:$WWW_GROUP"
-    echo "   - config.php: 640 (if present)"
-    echo "   - CLI scripts: 755"
-    echo ""
-
-    # Version-specific notes
-    if [ "$MOODLE_VERSION" = "4" ]; then
-        echo "⚠️  Important notes for Moodle 4:"
-        echo "   - PHP 7.4/8.0 required (8.0+ recommended)"
-        echo "   - MySQL 5.7+ or PostgreSQL 9.5+ or MariaDB 10.4+"
-        echo "   - Specific directories: trashdir/, filedir/, repository/"
-    else
-        echo "⚠️  Important notes for Moodle 5:"
-        echo "   - PHP 8.1+ required"
-        echo "   - MySQL 8.0+ or PostgreSQL 13+ or MariaDB 10.6+ recommended"
-        echo "   - Specific directories: trash/, localcache/, lock/, tasks/"
-    fi
-
-    echo "   - Check logs in $MOODLEDATA_DIR for errors"
-    echo ""
-    echo "================================================================================"
-    echo "Moodle Permissions Manager v${SCRIPT_RELEASE} - Operation completed"
-    echo "Moodle ${MOODLE_VERSION}.x - Configuration applied successfully"
-    echo "================================================================================"
+    echo "✅ Permessi applicati con successo per branch ${MOODLE_VERSION}."
 }
 
-# Argument parsing
-DRY_RUN=false
-SHOW_PERMS=false
-APPLY_FIXES=false
+# --------------------------------------------------------
+# ARGUMENT PARSING
+# --------------------------------------------------------
+if [ $# -eq 0 ]; then
+    show_header
+    echo "❌ ERRORE: Nessun argomento fornito."
+    echo ""
+    show_help
+    exit $EXIT_INVALID_ARGS
+fi
+
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help)
             show_header
             show_help
-            exit 0
-            ;;
-        -v|--version)
-            show_version
+            exit $EXIT_OK
             ;;
         -d|--dry-run)
             DRY_RUN=true
             shift
             ;;
-        -s|--show-perms)
-            SHOW_PERMS=true
-            shift
-            ;;
         -f|--fix)
             APPLY_FIXES=true
+            shift
+            ;;
+        -c|--clear-cache)
+            CLEAR_CACHE=true
             shift
             ;;
         -mp|--moodlepath)
@@ -537,47 +558,53 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         *)
-            echo "❌ Unknown argument: $1"
-            echo "Use $0 --help to see available options"
-            exit 1
+            echo "❌ ERRORE: Argomento sconosciuto: '$1'"
+            echo "   Usa -h per visualizzare l'aiuto."
+            exit $EXIT_INVALID_ARGS
             ;;
     esac
 done
 
-# Show header
-show_header
-
-echo "🎯 Detected configuration:"
-echo "   - Moodle Version: ${MOODLE_VERSION}.x"
-echo "   - Moodle Directory: $MOODLE_DIR"
-echo "   - Moodledata Directory: $MOODLEDATA_DIR"
-echo ""
-
-# Default behavior: if no action specified, show permissions
-if [ "$DRY_RUN" = false ] && [ "$SHOW_PERMS" = false ] && [ "$APPLY_FIXES" = false ]; then
-    echo "ℹ️  No action specified. Defaulting to show permissions mode."
-    echo "   Use --fix/-f to apply changes or --dry-run to simulate."
+# --------------------------------------------------------
+# FINAL VALIDATION
+# --------------------------------------------------------
+if [ -z "$MOODLE_VERSION" ]; then
+    show_header
+    echo "❌ ERRORE: Versione Moodle obbligatoria."
+    echo "   Specifica -mv 405 | 500 | 501 | 502"
     echo ""
-    SHOW_PERMS=true
+    show_help
+    exit $EXIT_INVALID_ARGS
 fi
 
-# Execute show-perms if requested
-if [ "$SHOW_PERMS" = true ]; then
-    show_current_permissions
+# dry-run e fix non sono combinabili
+if [ "$DRY_RUN" = true ] && [ "$APPLY_FIXES" = true ]; then
+    echo "❌ ERRORE: --dry-run e --fix non possono essere usati insieme."
+    exit $EXIT_INVALID_ARGS
 fi
 
-# Verify script is run as root for fix operations
-if [ "$APPLY_FIXES" = true ] && [ "$(id -u)" -ne 0 ]; then
-    echo "❌ This script must be run as root to apply fixes"
-    exit 1
-fi
-
-# Execute dry-run if requested
-if [ "$DRY_RUN" = true ]; then
-    dry_run
-fi
+# --------------------------------------------------------
+# EXECUTION
+# --------------------------------------------------------
+show_header
 
 # Execute fix if requested
 if [ "$APPLY_FIXES" = true ]; then
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "❌ ERRORE: --fix richiede i privilegi di root."
+        exit $EXIT_NOT_ROOT
+    fi
     apply_fixes
+    if [ "$CLEAR_CACHE" = true ]; then
+        purge_moodle_cache
+    fi
+
+elif [ "$DRY_RUN" = true ]; then
+    apply_fixes   # run_cmd stampa senza eseguire
+
+else
+    echo "ℹ️  Nessuna azione specificata."
+    echo "   Usa --fix per applicare le modifiche o --dry-run per simulare."
 fi
+
+exit $EXIT_OK
