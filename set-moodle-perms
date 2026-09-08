@@ -25,7 +25,7 @@ readonly EXIT_CACHE_FAILED=8
 # Edit these to match your environment so the script can
 # be launched with --fix only (no extra arguments needed).
 # --------------------------------------------------------
-MOODLE_BRANCH="MOODLE_501_STABLE"   # Full Moodle branch
+MOODLE_BRANCH="MOODLE_502_STABLE"   # Full Moodle branch
 MOODLE_DIR="/var/www/moodle"         # Moodle installation path
 MOODLEDATA_DIR="/var/moodledata"     # moodledata path
 
