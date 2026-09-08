@@ -25,9 +25,9 @@ readonly EXIT_CACHE_FAILED=8
 # Edit these to match your environment so the script can
 # be launched with --fix only (no extra arguments needed).
 # --------------------------------------------------------
-MOODLE_BRANCH="MOODLE_501_STABLE"   # Branch completo Moodle
-MOODLE_DIR="/var/www/moodle"         # Percorso installazione Moodle
-MOODLEDATA_DIR="/var/moodledata"     # Percorso moodledata
+MOODLE_BRANCH="MOODLE_501_STABLE"   # Full Moodle branch
+MOODLE_DIR="/var/www/moodle"         # Moodle installation path
+MOODLEDATA_DIR="/var/moodledata"     # moodledata path
 
 # Flags
 DRY_RUN=false
@@ -48,7 +48,7 @@ else
 fi
 
 # --------------------------------------------------------
-# HELPER: esegui o simula un comando
+# HELPER: run or simulate a command
 # --------------------------------------------------------
 run_cmd() {
     if [ "$DRY_RUN" = true ]; then
@@ -70,56 +70,56 @@ show_header() {
     [ -n "$MOODLE_BRANCH"  ] && echo " Branch     : ${MOODLE_BRANCH}"
     echo " Moodle dir : ${MOODLE_DIR}"
     echo " Data dir   : ${MOODLEDATA_DIR}"
-    [ "$DRY_RUN"  = true ] && echo " Mode       : DRY-RUN (nessuna modifica applicata)"
-    [ "$DRY_RUN"  = false ] && [ "$APPLY_FIXES" = true ] && echo " Mode       : FIX (modifiche reali)"
+    [ "$DRY_RUN"  = true ] && echo " Mode       : DRY-RUN (no changes applied)"
+    [ "$DRY_RUN"  = false ] && [ "$APPLY_FIXES" = true ] && echo " Mode       : FIX (real changes)"
     echo "================================================================================"
 }
 
 show_help() {
-    echo "Uso: $0 -mv BRANCH [OPZIONI]"
+    echo "Usage: $0 -mv BRANCH [OPTIONS]"
     echo ""
-    echo "Branch richiesti (-mv):"
-    echo "  MOODLE_405_STABLE  (default se non specificato)"
+    echo "Required branch (-mv):"
+    echo "  MOODLE_405_STABLE  (default if not specified)"
     echo "  MOODLE_500_STABLE"
     echo "  MOODLE_501_STABLE"
     echo "  MOODLE_502_STABLE"
     echo ""
-    echo "  Se MOODLE_BRANCH, MOODLE_DIR e MOODLEDATA_DIR sono impostati"
-    echo "  nei default dello script, basta lanciare: $0 --fix"
+    echo "  If MOODLE_BRANCH, MOODLE_DIR and MOODLEDATA_DIR are set"
+    echo "  in the script defaults, just run: $0 --fix"
     echo ""
-    echo "Opzioni:"
-    echo "  -h,  --help               Mostra questo messaggio"
-    echo "  -d,  --dry-run            Simula le operazioni senza applicarle"
-    echo "  -f,  --fix                Applica i fix (richiede root)"
-    echo "  -c,  --clear-cache        Svuota la cache Moodle dopo il fix"
-    echo "  -mp, --moodlepath PATH    Percorso Moodle (default: /var/www/moodle)"
-    echo "  -md, --moodledata PATH    Percorso moodledata (default: /var/moodledata)"
+    echo "Options:"
+    echo "  -h,  --help               Show this message"
+    echo "  -d,  --dry-run            Simulate the operations without applying them"
+    echo "  -f,  --fix                Apply the fixes (requires root)"
+    echo "  -c,  --clear-cache        Purge the Moodle cache after the fix"
+    echo "  -mp, --moodlepath PATH    Moodle path (default: /var/www/moodle)"
+    echo "  -md, --moodledata PATH    moodledata path (default: /var/moodledata)"
     echo ""
     echo "Exit codes:"
-    echo "  0  Successo"
-    echo "  1  Argomenti non validi / versione mancante"
-    echo "  2  Root richiesto per --fix"
-    echo "  3  Directory non trovata"
-    echo "  4  Versione Moodle non riconosciuta"
-    echo "  5  Errore chmod"
-    echo "  6  Errore chown"
-    echo "  7  Errore mkdir"
-    echo "  8  Errore purge cache"
+    echo "  0  Success"
+    echo "  1  Invalid arguments / missing version"
+    echo "  2  Root required for --fix"
+    echo "  3  Directory not found"
+    echo "  4  Unrecognized Moodle version"
+    echo "  5  chmod error"
+    echo "  6  chown error"
+    echo "  7  mkdir error"
+    echo "  8  Cache purge error"
 }
 
 validate_moodle_branch() {
     case "$1" in
         MOODLE_405_STABLE|MOODLE_500_STABLE|MOODLE_501_STABLE|MOODLE_502_STABLE) ;;
         *)
-            echo "❌ ERRORE: Branch non riconosciuto: '$1'."
-            echo "   Valori accettati:"
+            echo "❌ ERROR: Unrecognized branch: '$1'."
+            echo "   Accepted values:"
             echo "     MOODLE_405_STABLE | MOODLE_500_STABLE | MOODLE_501_STABLE | MOODLE_502_STABLE"
             exit $EXIT_UNKNOWN_VERSION
             ;;
     esac
 }
 
-# Restituisce la major version (4 o 5) dal branch completo
+# Returns the major version (4 or 5) from the full branch
 get_major_version() {
     case "$1" in
         MOODLE_405_STABLE) echo "4" ;;
@@ -130,30 +130,30 @@ get_major_version() {
 
 check_main_directories() {
     if [ ! -d "$MOODLE_DIR" ]; then
-        echo "❌ ERRORE: Directory Moodle non trovata: $MOODLE_DIR"
+        echo "❌ ERROR: Moodle directory not found: $MOODLE_DIR"
         exit $EXIT_DIR_NOT_FOUND
     fi
     if [ ! -d "$MOODLEDATA_DIR" ]; then
-        echo "❌ ERRORE: Directory moodledata non trovata: $MOODLEDATA_DIR"
+        echo "❌ ERROR: moodledata directory not found: $MOODLEDATA_DIR"
         exit $EXIT_DIR_NOT_FOUND
     fi
 }
 
 purge_moodle_cache() {
-    echo "🧹 Svuotamento cache Moodle..."
+    echo "🧹 Purging Moodle cache..."
     local purge_script="$MOODLE_DIR/admin/cli/purge_caches.php"
     if [ ! -f "$purge_script" ]; then
-        echo "⚠️  Script purge_caches.php non trovato. Cache non svuotata."
+        echo "⚠️  purge_caches.php script not found. Cache not purged."
         exit $EXIT_CACHE_FAILED
     fi
     if [ "$DRY_RUN" = true ]; then
         echo "   [DRY-RUN] sudo -u $WWW_USER php $purge_script"
     else
         sudo -u "$WWW_USER" php "$purge_script" || {
-            echo "❌ ERRORE: purge_caches.php fallito."
+            echo "❌ ERROR: purge_caches.php failed."
             exit $EXIT_CACHE_FAILED
         }
-        echo "✅ Cache svuotata."
+        echo "✅ Cache purged."
     fi
 }
 
@@ -162,48 +162,48 @@ apply_fixes() {
     major_version=$(get_major_version "$MOODLE_BRANCH")
 
     echo ""
-    echo "🛠️  Applicazione permessi per ${MOODLE_BRANCH} (major: ${major_version}.x)..."
+    echo "🛠️  Applying permissions for ${MOODLE_BRANCH} (major: ${major_version}.x)..."
     check_main_directories
 
     # -- 1. Ownership --
     echo "→ Ownership: ${WWW_USER}:${WWW_GROUP}"
     run_cmd chown -R "${WWW_USER}:${WWW_GROUP}" "$MOODLE_DIR" || {
-        echo "❌ ERRORE: chown fallito su $MOODLE_DIR"
+        echo "❌ ERROR: chown failed on $MOODLE_DIR"
         exit $EXIT_CHOWN_FAILED
     }
     run_cmd chown -R "${WWW_USER}:${WWW_GROUP}" "$MOODLEDATA_DIR" || {
-        echo "❌ ERRORE: chown fallito su $MOODLEDATA_DIR"
+        echo "❌ ERROR: chown failed on $MOODLEDATA_DIR"
         exit $EXIT_CHOWN_FAILED
     }
 
-    # -- 2. Permessi base --
-    echo "→ Permessi MOODLE_DIR  : u=rwX,g=rX,o=rX"
+    # -- 2. Base permissions --
+    echo "→ MOODLE_DIR permissions : u=rwX,g=rX,o=rX"
     run_cmd chmod -R u=rwX,g=rX,o=rX "$MOODLE_DIR" || {
-        echo "❌ ERRORE: chmod fallito su $MOODLE_DIR"
+        echo "❌ ERROR: chmod failed on $MOODLE_DIR"
         exit $EXIT_CHMOD_FAILED
     }
 
-    echo "→ Permessi MOODLEDATA  : u=rwX,g=rwX,o="
+    echo "→ MOODLEDATA permissions : u=rwX,g=rwX,o="
     run_cmd chmod -R u=rwX,g=rwX,o= "$MOODLEDATA_DIR" || {
-        echo "❌ ERRORE: chmod fallito su $MOODLEDATA_DIR"
+        echo "❌ ERROR: chmod failed on $MOODLEDATA_DIR"
         exit $EXIT_CHMOD_FAILED
     }
 
-    # -- 3. Hardening config.php --
+    # -- 3. config.php hardening --
     if [ -f "$MOODLE_DIR/config.php" ]; then
         echo "→ Hardening config.php → 640"
         run_cmd chmod 640 "$MOODLE_DIR/config.php" || {
-            echo "❌ ERRORE: chmod 640 su config.php fallito"
+            echo "❌ ERROR: chmod 640 on config.php failed"
             exit $EXIT_CHMOD_FAILED
         }
     fi
 
-    # -- 4. .htaccess su moodledata --
+    # -- 4. .htaccess on moodledata --
     if [ ! -f "$MOODLEDATA_DIR/.htaccess" ]; then
-        echo "→ Creazione .htaccess in moodledata"
+        echo "→ Creating .htaccess in moodledata"
         if [ "$DRY_RUN" = false ]; then
             echo "deny from all" > "$MOODLEDATA_DIR/.htaccess" || {
-                echo "❌ ERRORE: impossibile creare .htaccess"
+                echo "❌ ERROR: unable to create .htaccess"
                 exit $EXIT_CHMOD_FAILED
             }
             chown "${WWW_USER}:${WWW_GROUP}" "$MOODLEDATA_DIR/.htaccess"
@@ -212,26 +212,26 @@ apply_fixes() {
             echo "   [DRY-RUN] echo 'deny from all' > $MOODLEDATA_DIR/.htaccess"
         fi
     fi
-    # Avviso Nginx (il .htaccess non ha effetto)
+    # Nginx warning (.htaccess has no effect)
     if echo "$WWW_USER" | grep -q "nginx"; then
-        echo "⚠️  AVVISO: web user 'nginx' rilevato. Il file .htaccess non ha effetto"
-        echo "   su Nginx. Assicurati che la directory moodledata sia fuori dal webroot"
-        echo "   o protetta tramite blocco 'location' nella configurazione Nginx."
+        echo "⚠️  WARNING: web user 'nginx' detected. The .htaccess file has no effect"
+        echo "   on Nginx. Make sure the moodledata directory is outside the webroot"
+        echo "   or protected through a 'location' block in the Nginx configuration."
     fi
 
-    # -- 5. CLI scripts: solo i .php vanno resi eseguibili --
+    # -- 5. CLI scripts: only the .php files must be made executable --
     if [ -d "$MOODLE_DIR/admin/cli" ]; then
-        echo "→ Eseguibilità admin/cli (solo *.php)"
+        echo "→ admin/cli executability (only *.php)"
         run_cmd find "$MOODLE_DIR/admin/cli" -name "*.php" -exec chmod +x {} + || {
-            echo "❌ ERRORE: chmod +x su admin/cli fallito"
+            echo "❌ ERROR: chmod +x on admin/cli failed"
             exit $EXIT_CHMOD_FAILED
         }
     fi
 
-    # -- 6. Directory version-specific in moodledata --
+    # -- 6. Version-specific directories in moodledata --
     # Moodle 4.x
     local dirs_v4=("cache" "temp" "sessions" "lang" "h5p" "filedir" "trashdir")
-    # Moodle 5.x (aggiunge lock, tasks, localcache; mantiene filedir, lang, trashdir)
+    # Moodle 5.x (adds lock, tasks, localcache; keeps filedir, lang, trashdir)
     local dirs_v5=("cache" "temp" "sessions" "lang" "h5p" "filedir" "trashdir" "lock" "tasks" "localcache")
 
     local dirs=()
@@ -241,29 +241,29 @@ apply_fixes() {
         dirs=("${dirs_v5[@]}")
     fi
 
-    echo "→ Verifica/creazione directory moodledata (${#dirs[@]} dir):"
+    echo "→ Checking/creating moodledata directories (${#dirs[@]} dirs):"
     for dir in "${dirs[@]}"; do
         if [ ! -d "$MOODLEDATA_DIR/$dir" ]; then
             run_cmd mkdir -p "$MOODLEDATA_DIR/$dir" || {
-                echo "❌ ERRORE: mkdir fallito su $MOODLEDATA_DIR/$dir"
+                echo "❌ ERROR: mkdir failed on $MOODLEDATA_DIR/$dir"
                 exit $EXIT_MKDIR_FAILED
             }
             run_cmd chown "${WWW_USER}:${WWW_GROUP}" "$MOODLEDATA_DIR/$dir" || {
-                echo "❌ ERRORE: chown fallito su $MOODLEDATA_DIR/$dir"
+                echo "❌ ERROR: chown failed on $MOODLEDATA_DIR/$dir"
                 exit $EXIT_CHOWN_FAILED
             }
             run_cmd chmod 770 "$MOODLEDATA_DIR/$dir" || {
-                echo "❌ ERRORE: chmod 770 fallito su $MOODLEDATA_DIR/$dir"
+                echo "❌ ERROR: chmod 770 failed on $MOODLEDATA_DIR/$dir"
                 exit $EXIT_CHMOD_FAILED
             }
-            echo "   + $dir (creata, ${WWW_USER}:${WWW_GROUP} 770)"
+            echo "   + $dir (created, ${WWW_USER}:${WWW_GROUP} 770)"
         else
             echo "   ✓ $dir"
         fi
     done
 
     echo ""
-    echo "✅ Permessi applicati con successo per ${MOODLE_BRANCH}."
+    echo "✅ Permissions successfully applied for ${MOODLE_BRANCH}."
 }
 
 # --------------------------------------------------------
@@ -271,7 +271,7 @@ apply_fixes() {
 # --------------------------------------------------------
 if [ $# -eq 0 ]; then
     show_header
-    echo "❌ ERRORE: Nessun argomento fornito."
+    echo "❌ ERROR: No arguments provided."
     echo ""
     show_help
     exit $EXIT_INVALID_ARGS
@@ -310,8 +310,8 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         *)
-            echo "❌ ERRORE: Argomento sconosciuto: '$1'"
-            echo "   Usa -h per visualizzare l'aiuto."
+            echo "❌ ERROR: Unknown argument: '$1'"
+            echo "   Use -h to display the help."
             exit $EXIT_INVALID_ARGS
             ;;
     esac
@@ -322,19 +322,19 @@ done
 # --------------------------------------------------------
 if [ -z "$MOODLE_BRANCH" ]; then
     show_header
-    echo "❌ ERRORE: Branch Moodle non specificato."
-    echo "   Imposta MOODLE_BRANCH nei default oppure usa -mv MOODLE_XYZ_STABLE."
+    echo "❌ ERROR: Moodle branch not specified."
+    echo "   Set MOODLE_BRANCH in the defaults or use -mv MOODLE_XYZ_STABLE."
     echo ""
     show_help
     exit $EXIT_INVALID_ARGS
 fi
 
-# Valida il branch (copre anche il caso in cui sia impostato solo nei default)
+# Validate the branch (also covers the case where it is set only in the defaults)
 validate_moodle_branch "$MOODLE_BRANCH"
 
-# dry-run e fix non sono combinabili
+# dry-run and fix cannot be combined
 if [ "$DRY_RUN" = true ] && [ "$APPLY_FIXES" = true ]; then
-    echo "❌ ERRORE: --dry-run e --fix non possono essere usati insieme."
+    echo "❌ ERROR: --dry-run and --fix cannot be used together."
     exit $EXIT_INVALID_ARGS
 fi
 
@@ -345,7 +345,7 @@ show_header
 
 if [ "$APPLY_FIXES" = true ]; then
     if [ "$(id -u)" -ne 0 ]; then
-        echo "❌ ERRORE: --fix richiede i privilegi di root."
+        echo "❌ ERROR: --fix requires root privileges."
         exit $EXIT_NOT_ROOT
     fi
     apply_fixes
@@ -354,11 +354,11 @@ if [ "$APPLY_FIXES" = true ]; then
     fi
 
 elif [ "$DRY_RUN" = true ]; then
-    apply_fixes   # run_cmd stampa senza eseguire
+    apply_fixes   # run_cmd prints without executing
 
 else
-    echo "ℹ️  Nessuna azione specificata."
-    echo "   Usa --fix per applicare le modifiche o --dry-run per simulare."
+    echo "ℹ️  No action specified."
+    echo "   Use --fix to apply the changes or --dry-run to simulate."
 fi
 
 exit $EXIT_OK
