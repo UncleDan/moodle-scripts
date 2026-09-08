@@ -1,11 +1,11 @@
 #!/bin/bash
 # ========================================================
 # Moodle Permissions Manager - Unified Script
-# Supports MOODLE_405_STABLE | MOODLE_500_STABLE | MOODLE_501_STABLE | MOODLE_502_STABLE
+# Branch independent: the permission model is the same for Moodle 4.x and 5.x
 # ========================================================
 
 # SCRIPT RELEASE INFORMATION
-SCRIPT_RELEASE="26.06"
+SCRIPT_RELEASE="26.09"
 SCRIPT_AUTHOR="Daniele Lolli (UncleDan)"
 SCRIPT_LICENSE="GPL-3.0"
 
@@ -14,24 +14,33 @@ readonly EXIT_OK=0
 readonly EXIT_INVALID_ARGS=1
 readonly EXIT_NOT_ROOT=2
 readonly EXIT_DIR_NOT_FOUND=3
-readonly EXIT_UNKNOWN_VERSION=4
+readonly EXIT_UNKNOWN_VERSION=4   # reserved, no longer used (no branch selection)
 readonly EXIT_CHMOD_FAILED=5
 readonly EXIT_CHOWN_FAILED=6
-readonly EXIT_MKDIR_FAILED=7
+readonly EXIT_MKDIR_FAILED=7   # reserved, no longer used (no pre-creation)
 readonly EXIT_CACHE_FAILED=8
+readonly EXIT_CONFIG_NOT_FOUND=9
+readonly EXIT_DATAROOT_NOT_FOUND=10
 
 # --------------------------------------------------------
 # DEFAULT CONFIGURATION
 # Edit these to match your environment so the script can
 # be launched with --fix only (no extra arguments needed).
 # --------------------------------------------------------
-MOODLE_BRANCH="MOODLE_502_STABLE"   # Full Moodle branch
 MOODLE_DIR="/var/www/moodle"         # Moodle installation path
 MOODLEDATA_DIR="/var/moodledata"     # moodledata path
+
+# Provenance of the two paths: "default", "argument" or "config.php".
+# Paths not passed on the command line are read from config.php.
+MOODLE_DIR_SOURCE="default"
+MOODLEDATA_DIR_SOURCE="default"
+MOODLE_DIR_FROM_ARG=false
+MOODLEDATA_DIR_FROM_ARG=false
 
 # Flags
 DRY_RUN=false
 APPLY_FIXES=false
+APPLY_HARDEN=false
 CLEAR_CACHE=false
 
 # --------------------------------------------------------
@@ -67,65 +76,143 @@ show_header() {
     echo " Moodle Permissions Manager v${SCRIPT_RELEASE}"
     echo "================================================================================"
     echo " Web user   : ${WWW_USER}:${WWW_GROUP}"
-    [ -n "$MOODLE_BRANCH"  ] && echo " Branch     : ${MOODLE_BRANCH}"
-    echo " Moodle dir : ${MOODLE_DIR}"
-    echo " Data dir   : ${MOODLEDATA_DIR}"
+    echo " Moodle dir : ${MOODLE_DIR} (${MOODLE_DIR_SOURCE})"
+    echo " Data dir   : ${MOODLEDATA_DIR} (${MOODLEDATA_DIR_SOURCE})"
     [ "$DRY_RUN"  = true ] && echo " Mode       : DRY-RUN (no changes applied)"
-    [ "$DRY_RUN"  = false ] && [ "$APPLY_FIXES" = true ] && echo " Mode       : FIX (real changes)"
+    [ "$DRY_RUN"  = false ] && [ "$APPLY_FIXES" = true ] && echo " Mode       : SEMI-HARDEN (real changes, core code read-only)"
+    [ "$DRY_RUN"  = false ] && [ "$APPLY_HARDEN" = true ] && echo " Mode       : HARDEN (real changes, read-only code tree)"
     echo "================================================================================"
 }
 
 show_help() {
-    echo "Usage: $0 -mv BRANCH [OPTIONS]"
+    echo "Usage: $0 [OPTIONS]"
     echo ""
-    echo "Required branch (-mv):"
-    echo "  MOODLE_405_STABLE  (default if not specified)"
-    echo "  MOODLE_500_STABLE"
-    echo "  MOODLE_501_STABLE"
-    echo "  MOODLE_502_STABLE"
-    echo ""
-    echo "  If MOODLE_BRANCH, MOODLE_DIR and MOODLEDATA_DIR are set"
-    echo "  in the script defaults, just run: $0 --fix"
+    echo "  The permission model does not depend on the Moodle branch: 4.x and 5.x"
+    echo "  are treated identically. If MOODLE_DIR and MOODLEDATA_DIR are set in the"
+    echo "  script defaults, or readable from config.php, just run: $0 --semi-harden"
     echo ""
     echo "Options:"
     echo "  -h,  --help               Show this message"
     echo "  -d,  --dry-run            Simulate the operations without applying them"
-    echo "  -f,  --fix                Apply the fixes (requires root)"
-    echo "  -c,  --clear-cache        Purge the Moodle cache after the fix"
+    echo "  -f,  --fix                Alias of --semi-harden (kept for compatibility)"
+    echo "  -sh, --semi-harden        Apply the semi-hardened permission model (requires"
+    echo "                            root): code tree owned by root and read-only for the"
+    echo "                            web service, config.php 0640, moodledata 0750/0640,"
+    echo "                            and group write only on the plugin type directories"
+    echo "                            so the web UI can still install, update and"
+    echo "                            uninstall plugins. No directory is pre-created."
+    echo "  -hd, --harden             Apply the hardened permission model (requires root):"
+    echo "                            code tree owned by root and NOT writable by the web"
+    echo "                            service, config.php read-only for the web service,"
+    echo "                            moodledata 0750/0640. Mutually exclusive with"
+    echo "                            --semi-harden."
+    echo "                            No directory is pre-created: Moodle creates its"
+    echo "                            own subdirectories under dataroot on demand."
+    echo "                            NOTE: --harden blocks exactly three web UI actions:"
+    echo "                            install, update and uninstall a plugin. Everything"
+    echo "                            else (language packs, themes, backups, H5P, uploads,"
+    echo "                            caches) writes to moodledata and keeps working."
+    echo ""
+    echo "SELinux note:"
+    echo "  This script only changes owner and mode. It does NOT relabel SELinux"
+    echo "  contexts. On RHEL/Alma/Rocky/Fedora with SELinux in enforcing mode, a"
+    echo "  recursive chown/chmod can leave the tree with the wrong labels, so the"
+    echo "  web service may be denied access even when owner and mode look correct."
+    echo "  After --semi-harden or --harden, restore the contexts manually, e.g.:"
+    echo "    restorecon -R -v /var/www/moodle /var/moodledata"
+    echo "  If the labels were never set, define them first, e.g.:"
+    echo "    semanage fcontext -a -t httpd_sys_content_t '/var/www/moodle(/.*)?'"
+    echo "    semanage fcontext -a -t httpd_sys_rw_content_t '/var/moodledata(/.*)?'"
+    echo "  Check the current state with: getenforce  and  ls -Z"
+    echo "  -c,  --clear-cache        Purge the Moodle cache afterwards"
     echo "  -mp, --moodlepath PATH    Moodle path (default: /var/www/moodle)"
-    echo "  -md, --moodledata PATH    moodledata path (default: /var/moodledata)"
+    echo "  -md, --moodledata PATH    moodledata path; if omitted it is read from"
+    echo "                            \$CFG->dataroot in MOODLE_DIR/config.php"
+    echo ""
+    echo "Path resolution:"
+    echo "  Any path not supplied on the command line is read from config.php."
+    echo "  -mp always wins over \$CFG->dirroot, -md always wins over \$CFG->dataroot."
+    echo "  config.php is read with PHP when available (ABORT_AFTER_CONFIG, so Moodle"
+    echo "  is not bootstrapped), otherwise with a literal text parse."
     echo ""
     echo "Exit codes:"
     echo "  0  Success"
-    echo "  1  Invalid arguments / missing version"
-    echo "  2  Root required for --fix"
+    echo "  1  Invalid arguments"
+    echo "  2  Root required for --semi-harden / --harden"
     echo "  3  Directory not found"
-    echo "  4  Unrecognized Moodle version"
     echo "  5  chmod error"
     echo "  6  chown error"
-    echo "  7  mkdir error"
     echo "  8  Cache purge error"
+    echo "  9  config.php not found or not readable"
+    echo " 10  \$CFG->dataroot not found in config.php"
 }
 
-validate_moodle_branch() {
-    case "$1" in
-        MOODLE_405_STABLE|MOODLE_500_STABLE|MOODLE_501_STABLE|MOODLE_502_STABLE) ;;
-        *)
-            echo "❌ ERROR: Unrecognized branch: '$1'."
-            echo "   Accepted values:"
-            echo "     MOODLE_405_STABLE | MOODLE_500_STABLE | MOODLE_501_STABLE | MOODLE_502_STABLE"
-            exit $EXIT_UNKNOWN_VERSION
-            ;;
-    esac
+# --------------------------------------------------------
+# CONFIG.PHP PATH RESOLUTION
+# Paths not supplied with -mp/-md are read from config.php.
+# --------------------------------------------------------
+
+# Reads a single $CFG value from config.php.
+# Uses PHP when available (authoritative, ABORT_AFTER_CONFIG prevents the
+# full Moodle bootstrap), otherwise falls back to a literal text parse.
+get_cfg_value() {
+    local name="$1"
+    local config_file="$2"
+    local value=""
+
+    if command -v php >/dev/null 2>&1; then
+        value=$(php -r "define('ABORT_AFTER_CONFIG', true); require('$config_file'); if (isset(\$CFG->$name)) { echo \$CFG->$name; }" 2>/dev/null)
+    fi
+
+    if [ -z "$value" ]; then
+        value=$(sed -n "s/^[[:space:]]*\$CFG->$name[[:space:]]*=[[:space:]]*['\"]\([^'\"]*\)['\"][[:space:]]*;.*/\1/p" "$config_file" | tail -n 1)
+    fi
+
+    echo "$value"
 }
 
-# Returns the major version (4 or 5) from the full branch
-get_major_version() {
-    case "$1" in
-        MOODLE_405_STABLE) echo "4" ;;
-        MOODLE_500_STABLE|MOODLE_501_STABLE|MOODLE_502_STABLE) echo "5" ;;
-        *) echo "" ;;
-    esac
+resolve_paths_from_config() {
+    # Nothing to read: both paths were supplied explicitly.
+    if [ "$MOODLE_DIR_FROM_ARG" = true ] && [ "$MOODLEDATA_DIR_FROM_ARG" = true ]; then
+        return
+    fi
+
+    local config_file="$MOODLE_DIR/config.php"
+
+    if [ ! -f "$config_file" ]; then
+        echo "❌ ERROR: config.php not found: $config_file"
+        echo "   Supply the paths explicitly with -mp and -md, or point -mp at the"
+        echo "   directory that contains config.php."
+        exit $EXIT_CONFIG_NOT_FOUND
+    fi
+    if [ ! -r "$config_file" ]; then
+        echo "❌ ERROR: config.php not readable: $config_file"
+        echo "   It is normally root:${WWW_GROUP} 0640 — run the script as root."
+        exit $EXIT_CONFIG_NOT_FOUND
+    fi
+
+    # $CFG->dirroot is usually derived at runtime, so it is adopted only when
+    # config.php sets it explicitly.
+    if [ "$MOODLE_DIR_FROM_ARG" = false ]; then
+        local dirroot
+        dirroot=$(get_cfg_value "dirroot" "$config_file")
+        if [ -n "$dirroot" ]; then
+            MOODLE_DIR="$dirroot"
+            MOODLE_DIR_SOURCE="config.php"
+        fi
+    fi
+
+    if [ "$MOODLEDATA_DIR_FROM_ARG" = false ]; then
+        local dataroot
+        dataroot=$(get_cfg_value "dataroot" "$config_file")
+        if [ -z "$dataroot" ]; then
+            echo "❌ ERROR: \$CFG->dataroot not found in $config_file"
+            echo "   Supply the moodledata path explicitly with -md."
+            exit $EXIT_DATAROOT_NOT_FOUND
+        fi
+        MOODLEDATA_DIR="$dataroot"
+        MOODLEDATA_DIR_SOURCE="config.php"
+    fi
 }
 
 check_main_directories() {
@@ -157,48 +244,102 @@ purge_moodle_cache() {
     fi
 }
 
-apply_fixes() {
-    local major_version
-    major_version=$(get_major_version "$MOODLE_BRANCH")
+# --------------------------------------------------------
+# PLUGIN TYPE DIRECTORIES
+# Paths, relative to MOODLE_DIR, that the web UI must be able to write to
+# in order to install, update and uninstall plugins. Everything outside
+# this list stays read-only for the web service.
+# Non-existent entries are skipped, so the list is safe across branches.
+# --------------------------------------------------------
+PLUGIN_TYPE_DIRS=(
+    "mod" "blocks" "theme" "local" "filter" "enrol" "auth" "report"
+    "admin/tool" "admin/report"
+    "question/type" "question/behaviour" "question/format" "question/bank"
+    "course/format" "availability/condition" "calendar/type"
+    "message/output" "repository" "portfolio" "plagiarism" "webservice"
+    "cache/stores" "cache/locks" "contenttype" "customfield/field"
+    "dataformat" "files/converter" "gradingform"
+    "grade/export" "grade/import" "grade/report"
+    "h5p/h5plib" "lib/antivirus" "lib/editor"
+    "media/player" "payment/gateway" "search/engine" "user/profile/field"
+    "communication/provider" "ai/provider" "ai/placement"
+    "mnet/service"
+)
 
+apply_semi_harden() {
     echo ""
-    echo "🛠️  Applying permissions for ${MOODLE_BRANCH} (major: ${major_version}.x)..."
+    echo "🔐 Applying semi-hardened permissions..."
     check_main_directories
 
-    # -- 1. Ownership --
-    echo "→ Ownership: ${WWW_USER}:${WWW_GROUP}"
-    run_cmd chown -R "${WWW_USER}:${WWW_GROUP}" "$MOODLE_DIR" || {
+    # -- 1. Code tree owned by root, group = web service --
+    echo "→ Ownership MOODLE_DIR   : root:${WWW_GROUP}"
+    run_cmd chown -R "root:${WWW_GROUP}" "$MOODLE_DIR" || {
         echo "❌ ERROR: chown failed on $MOODLE_DIR"
         exit $EXIT_CHOWN_FAILED
     }
+
+    echo "→ MOODLE_DIR permissions : dirs 0755 / files 0644"
+    run_cmd find "$MOODLE_DIR" -type d -exec chmod 0755 {} + || {
+        echo "❌ ERROR: chmod 0755 failed on $MOODLE_DIR directories"
+        exit $EXIT_CHMOD_FAILED
+    }
+    run_cmd find "$MOODLE_DIR" -type f -exec chmod 0644 {} + || {
+        echo "❌ ERROR: chmod 0644 failed on $MOODLE_DIR files"
+        exit $EXIT_CHMOD_FAILED
+    }
+
+    # -- 2. config.php: readable by the web service, writable only by root --
+    if [ -f "$MOODLE_DIR/config.php" ]; then
+        echo "→ config.php             : root:${WWW_GROUP} 0640"
+        run_cmd chmod 0640 "$MOODLE_DIR/config.php" || {
+            echo "❌ ERROR: chmod 0640 on config.php failed"
+            exit $EXIT_CHMOD_FAILED
+        }
+    fi
+
+    # -- 3. Plugin type directories: group-writable, setgid --
+    # Recursive, because updating or uninstalling a plugin means deleting its
+    # existing directory tree, not just writing into the parent.
+    echo "→ Plugin type dirs       : dirs 2775 / files 0664 (group ${WWW_GROUP})"
+    local found=0
+    local skipped=0
+    local ptdir
+    for ptdir in "${PLUGIN_TYPE_DIRS[@]}"; do
+        if [ -d "$MOODLE_DIR/$ptdir" ]; then
+            run_cmd find "$MOODLE_DIR/$ptdir" -type d -exec chmod 2775 {} + || {
+                echo "❌ ERROR: chmod 2775 failed on $MOODLE_DIR/$ptdir"
+                exit $EXIT_CHMOD_FAILED
+            }
+            run_cmd find "$MOODLE_DIR/$ptdir" -type f -exec chmod 0664 {} + || {
+                echo "❌ ERROR: chmod 0664 failed on $MOODLE_DIR/$ptdir"
+                exit $EXIT_CHMOD_FAILED
+            }
+            found=$((found + 1))
+            [ "$DRY_RUN" = false ] && echo "   + $ptdir"
+        else
+            skipped=$((skipped + 1))
+        fi
+    done
+    echo "   ${found} plugin type dirs made writable, ${skipped} not present on this branch"
+
+    # -- 4. moodledata: writable by the web service --
+    echo "→ Ownership MOODLEDATA   : ${WWW_USER}:${WWW_GROUP}"
     run_cmd chown -R "${WWW_USER}:${WWW_GROUP}" "$MOODLEDATA_DIR" || {
         echo "❌ ERROR: chown failed on $MOODLEDATA_DIR"
         exit $EXIT_CHOWN_FAILED
     }
 
-    # -- 2. Base permissions --
-    echo "→ MOODLE_DIR permissions : u=rwX,g=rX,o=rX"
-    run_cmd chmod -R u=rwX,g=rX,o=rX "$MOODLE_DIR" || {
-        echo "❌ ERROR: chmod failed on $MOODLE_DIR"
+    echo "→ MOODLEDATA permissions : dirs 0750 / files 0640"
+    run_cmd find "$MOODLEDATA_DIR" -type d -exec chmod 0750 {} + || {
+        echo "❌ ERROR: chmod 0750 failed on $MOODLEDATA_DIR directories"
+        exit $EXIT_CHMOD_FAILED
+    }
+    run_cmd find "$MOODLEDATA_DIR" -type f -exec chmod 0640 {} + || {
+        echo "❌ ERROR: chmod 0640 failed on $MOODLEDATA_DIR files"
         exit $EXIT_CHMOD_FAILED
     }
 
-    echo "→ MOODLEDATA permissions : u=rwX,g=rwX,o="
-    run_cmd chmod -R u=rwX,g=rwX,o= "$MOODLEDATA_DIR" || {
-        echo "❌ ERROR: chmod failed on $MOODLEDATA_DIR"
-        exit $EXIT_CHMOD_FAILED
-    }
-
-    # -- 3. config.php hardening --
-    if [ -f "$MOODLE_DIR/config.php" ]; then
-        echo "→ Hardening config.php → 640"
-        run_cmd chmod 640 "$MOODLE_DIR/config.php" || {
-            echo "❌ ERROR: chmod 640 on config.php failed"
-            exit $EXIT_CHMOD_FAILED
-        }
-    fi
-
-    # -- 4. .htaccess on moodledata --
+    # -- 5. .htaccess on moodledata (not web-writable) --
     if [ ! -f "$MOODLEDATA_DIR/.htaccess" ]; then
         echo "→ Creating .htaccess in moodledata"
         if [ "$DRY_RUN" = false ]; then
@@ -206,8 +347,8 @@ apply_fixes() {
                 echo "❌ ERROR: unable to create .htaccess"
                 exit $EXIT_CHMOD_FAILED
             }
-            chown "${WWW_USER}:${WWW_GROUP}" "$MOODLEDATA_DIR/.htaccess"
-            chmod 660 "$MOODLEDATA_DIR/.htaccess"
+            chown "root:${WWW_GROUP}" "$MOODLEDATA_DIR/.htaccess"
+            chmod 0640 "$MOODLEDATA_DIR/.htaccess"
         else
             echo "   [DRY-RUN] echo 'deny from all' > $MOODLEDATA_DIR/.htaccess"
         fi
@@ -219,51 +360,92 @@ apply_fixes() {
         echo "   or protected through a 'location' block in the Nginx configuration."
     fi
 
-    # -- 5. CLI scripts: only the .php files must be made executable --
-    if [ -d "$MOODLE_DIR/admin/cli" ]; then
-        echo "→ admin/cli executability (only *.php)"
-        run_cmd find "$MOODLE_DIR/admin/cli" -name "*.php" -exec chmod +x {} + || {
-            echo "❌ ERROR: chmod +x on admin/cli failed"
+    # -- 6. No directory pre-creation --
+    # Moodle creates its own subdirectories under dataroot on demand via
+    # make_*_directory(), using the mode in $CFG->directorypermissions.
+
+    echo ""
+    echo "✅ Semi-hardened permissions successfully applied."
+    echo "ℹ️  Core code (lib/, install/, admin/cli, index.php, version.php,"
+    echo "   config.php, vendor/) is now read-only for ${WWW_USER}."
+    echo "   Plugin install, update and uninstall from the web UI still work."
+    echo "ℹ️  SELinux contexts were NOT changed by this script. On a system with"
+    echo "   SELinux enforcing, run manually:"
+    echo "     restorecon -R -v \"$MOODLE_DIR\" \"$MOODLEDATA_DIR\""
+    echo "   See -h for the full SELinux note."
+}
+apply_harden() {
+    echo ""
+    echo "🔒 Applying hardened permissions..."
+    check_main_directories
+
+    # -- 1. Code tree owned by root, never writable by the web service --
+    echo "→ Ownership MOODLE_DIR   : root:root"
+    run_cmd chown -R root:root "$MOODLE_DIR" || {
+        echo "❌ ERROR: chown failed on $MOODLE_DIR"
+        exit $EXIT_CHOWN_FAILED
+    }
+
+    echo "→ MOODLE_DIR permissions : dirs 0755 / files 0644"
+    run_cmd find "$MOODLE_DIR" -type d -exec chmod 0755 {} + || {
+        echo "❌ ERROR: chmod 0755 failed on $MOODLE_DIR directories"
+        exit $EXIT_CHMOD_FAILED
+    }
+    run_cmd find "$MOODLE_DIR" -type f -exec chmod 0644 {} + || {
+        echo "❌ ERROR: chmod 0644 failed on $MOODLE_DIR files"
+        exit $EXIT_CHMOD_FAILED
+    }
+
+    # -- 2. config.php: readable by the web service, writable only by root --
+    if [ -f "$MOODLE_DIR/config.php" ]; then
+        echo "→ config.php             : root:${WWW_GROUP} 0640"
+        run_cmd chown "root:${WWW_GROUP}" "$MOODLE_DIR/config.php" || {
+            echo "❌ ERROR: chown on config.php failed"
+            exit $EXIT_CHOWN_FAILED
+        }
+        run_cmd chmod 0640 "$MOODLE_DIR/config.php" || {
+            echo "❌ ERROR: chmod 0640 on config.php failed"
             exit $EXIT_CHMOD_FAILED
         }
     fi
 
-    # -- 6. Version-specific directories in moodledata --
-    # Moodle 4.x
-    local dirs_v4=("cache" "temp" "sessions" "lang" "h5p" "filedir" "trashdir")
-    # Moodle 5.x (adds lock, tasks, localcache; keeps filedir, lang, trashdir)
-    local dirs_v5=("cache" "temp" "sessions" "lang" "h5p" "filedir" "trashdir" "lock" "tasks" "localcache")
+    # -- 3. moodledata: the only tree writable by the web service --
+    echo "→ Ownership MOODLEDATA   : ${WWW_USER}:${WWW_GROUP}"
+    run_cmd chown -R "${WWW_USER}:${WWW_GROUP}" "$MOODLEDATA_DIR" || {
+        echo "❌ ERROR: chown failed on $MOODLEDATA_DIR"
+        exit $EXIT_CHOWN_FAILED
+    }
 
-    local dirs=()
-    if [ "$major_version" = "4" ]; then
-        dirs=("${dirs_v4[@]}")
-    else
-        dirs=("${dirs_v5[@]}")
-    fi
+    echo "→ MOODLEDATA permissions : dirs 0750 / files 0640"
+    run_cmd find "$MOODLEDATA_DIR" -type d -exec chmod 0750 {} + || {
+        echo "❌ ERROR: chmod 0750 failed on $MOODLEDATA_DIR directories"
+        exit $EXIT_CHMOD_FAILED
+    }
+    run_cmd find "$MOODLEDATA_DIR" -type f -exec chmod 0640 {} + || {
+        echo "❌ ERROR: chmod 0640 failed on $MOODLEDATA_DIR files"
+        exit $EXIT_CHMOD_FAILED
+    }
 
-    echo "→ Checking/creating moodledata directories (${#dirs[@]} dirs):"
-    for dir in "${dirs[@]}"; do
-        if [ ! -d "$MOODLEDATA_DIR/$dir" ]; then
-            run_cmd mkdir -p "$MOODLEDATA_DIR/$dir" || {
-                echo "❌ ERROR: mkdir failed on $MOODLEDATA_DIR/$dir"
-                exit $EXIT_MKDIR_FAILED
-            }
-            run_cmd chown "${WWW_USER}:${WWW_GROUP}" "$MOODLEDATA_DIR/$dir" || {
-                echo "❌ ERROR: chown failed on $MOODLEDATA_DIR/$dir"
-                exit $EXIT_CHOWN_FAILED
-            }
-            run_cmd chmod 770 "$MOODLEDATA_DIR/$dir" || {
-                echo "❌ ERROR: chmod 770 failed on $MOODLEDATA_DIR/$dir"
-                exit $EXIT_CHMOD_FAILED
-            }
-            echo "   + $dir (created, ${WWW_USER}:${WWW_GROUP} 770)"
-        else
-            echo "   ✓ $dir"
-        fi
-    done
+    # -- 4. No .htaccess --
+    # TurnKey writes no .htaccess: dataroot belongs outside the served tree,
+    # which is the actual protection. See the closing note below.
+
+    # -- 5. No directory pre-creation --
+    # TurnKey does not pre-create anything under dataroot: Moodle creates its
+    # own subdirectories on demand via make_*_directory(), using the mode in
+    # $CFG->directorypermissions. Pre-creating them here would impose a mode
+    # Moodle did not choose.
 
     echo ""
-    echo "✅ Permissions successfully applied for ${MOODLE_BRANCH}."
+    echo "✅ Hardened permissions successfully applied."
+    echo "ℹ️  The code tree is now read-only for ${WWW_USER}: plugin install/update"
+    echo "   from the web UI is disabled. Use the CLI as root instead."
+    echo "ℹ️  No .htaccess is written. Make sure ${MOODLEDATA_DIR} is not reachable"
+    echo "   from the web server (outside DocumentRoot, or denied in the vhost)."
+    echo "ℹ️  SELinux contexts were NOT changed by this script. On a system with"
+    echo "   SELinux enforcing, run manually:"
+    echo "     restorecon -R -v \"$MOODLE_DIR\" \"$MOODLEDATA_DIR\""
+    echo "   See -h for the full SELinux note."
 }
 
 # --------------------------------------------------------
@@ -288,8 +470,12 @@ while [[ $# -gt 0 ]]; do
             DRY_RUN=true
             shift
             ;;
-        -f|--fix)
+        -f|--fix|-sh|--semi-harden)
             APPLY_FIXES=true
+            shift
+            ;;
+        -hd|--harden)
+            APPLY_HARDEN=true
             shift
             ;;
         -c|--clear-cache)
@@ -298,15 +484,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         -mp|--moodlepath)
             MOODLE_DIR="$2"
+            MOODLE_DIR_FROM_ARG=true
+            MOODLE_DIR_SOURCE="argument"
             shift 2
             ;;
         -md|--moodledata)
             MOODLEDATA_DIR="$2"
-            shift 2
-            ;;
-        -mv|--moodleversion)
-            MOODLE_BRANCH="$2"
-            validate_moodle_branch "$MOODLE_BRANCH"
+            MOODLEDATA_DIR_FROM_ARG=true
+            MOODLEDATA_DIR_SOURCE="argument"
             shift 2
             ;;
         *)
@@ -320,23 +505,21 @@ done
 # --------------------------------------------------------
 # FINAL VALIDATION
 # --------------------------------------------------------
-if [ -z "$MOODLE_BRANCH" ]; then
-    show_header
-    echo "❌ ERROR: Moodle branch not specified."
-    echo "   Set MOODLE_BRANCH in the defaults or use -mv MOODLE_XYZ_STABLE."
-    echo ""
-    show_help
-    exit $EXIT_INVALID_ARGS
-fi
 
-# Validate the branch (also covers the case where it is set only in the defaults)
-validate_moodle_branch "$MOODLE_BRANCH"
-
-# dry-run and fix cannot be combined
+# dry-run and semi-harden cannot be combined
 if [ "$DRY_RUN" = true ] && [ "$APPLY_FIXES" = true ]; then
-    echo "❌ ERROR: --dry-run and --fix cannot be used together."
+    echo "❌ ERROR: --dry-run and --semi-harden cannot be used together."
     exit $EXIT_INVALID_ARGS
 fi
+
+# semi-harden and harden apply two different permission models
+if [ "$APPLY_FIXES" = true ] && [ "$APPLY_HARDEN" = true ]; then
+    echo "❌ ERROR: --semi-harden and --harden cannot be used together."
+    exit $EXIT_INVALID_ARGS
+fi
+
+# Read from config.php any path not supplied with -mp/-md
+resolve_paths_from_config
 
 # --------------------------------------------------------
 # EXECUTION
@@ -345,20 +528,34 @@ show_header
 
 if [ "$APPLY_FIXES" = true ]; then
     if [ "$(id -u)" -ne 0 ]; then
-        echo "❌ ERROR: --fix requires root privileges."
+        echo "❌ ERROR: --semi-harden requires root privileges."
         exit $EXIT_NOT_ROOT
     fi
-    apply_fixes
+    apply_semi_harden
+    if [ "$CLEAR_CACHE" = true ]; then
+        purge_moodle_cache
+    fi
+
+elif [ "$APPLY_HARDEN" = true ] && [ "$DRY_RUN" = false ]; then
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "❌ ERROR: --harden requires root privileges."
+        exit $EXIT_NOT_ROOT
+    fi
+    apply_harden
     if [ "$CLEAR_CACHE" = true ]; then
         purge_moodle_cache
     fi
 
 elif [ "$DRY_RUN" = true ]; then
-    apply_fixes   # run_cmd prints without executing
+    if [ "$APPLY_HARDEN" = true ]; then
+        apply_harden   # run_cmd prints without executing
+    else
+        apply_semi_harden    # run_cmd prints without executing
+    fi
 
 else
     echo "ℹ️  No action specified."
-    echo "   Use --fix to apply the changes or --dry-run to simulate."
+    echo "   Use --semi-harden or --harden to apply the changes, or --dry-run to simulate."
 fi
 
 exit $EXIT_OK
