@@ -168,15 +168,32 @@ get_cfg_value() {
     local config_file="$2"
     local value=""
 
+    # PHP path. CLI_SCRIPT must be defined too: lib/setup.php checks it BEFORE
+    # it honours ABORT_AFTER_CONFIG and dies otherwise, printing its complaint
+    # on stdout, which would otherwise be captured as if it were the value.
     if command -v php >/dev/null 2>&1; then
-        value=$(php -r "define('ABORT_AFTER_CONFIG', true); require('$config_file'); if (isset(\$CFG->$name)) { echo \$CFG->$name; }" 2>/dev/null)
+        value=$(php -r "define('CLI_SCRIPT', true); define('ABORT_AFTER_CONFIG', true); require('$config_file'); if (isset(\$CFG->$name)) { echo \$CFG->$name; }" 2>/dev/null) || value=""
+        # Pick the first line that looks like an absolute path: PHP notices,
+        # deprecations and die() messages are printed on stdout too.
+        value=$(printf '%s\n' "$value" | grep -m 1 '^/' || true)
+        # Anything that is not a single absolute path is an error message,
+        # a warning or a notice, never a usable value.
+        case "$value" in
+            /*) ;;
+            *) value="" ;;
+        esac
     fi
 
+    # Literal text parse fallback.
     if [ -z "$value" ]; then
         value=$(sed -n "s/^[[:space:]]*\$CFG->$name[[:space:]]*=[[:space:]]*['\"]\([^'\"]*\)['\"][[:space:]]*;.*/\1/p" "$config_file" | tail -n 1)
+        case "$value" in
+            /*) ;;
+            *) value="" ;;
+        esac
     fi
 
-    echo "$value"
+    printf '%s' "$value"
 }
 
 resolve_paths_from_config() {
@@ -200,11 +217,11 @@ resolve_paths_from_config() {
     fi
 
     # $CFG->dirroot is usually derived at runtime, so it is adopted only when
-    # config.php sets it explicitly.
+    # config.php sets it explicitly and points at a real directory.
     if [ "$MOODLE_DIR_FROM_ARG" = false ]; then
         local dirroot
         dirroot=$(get_cfg_value "dirroot" "$config_file")
-        if [ -n "$dirroot" ]; then
+        if [ -n "$dirroot" ] && [ -d "$dirroot" ]; then
             MOODLE_DIR="$dirroot"
             MOODLE_DIR_SOURCE="config.php"
         fi
@@ -214,8 +231,15 @@ resolve_paths_from_config() {
         local dataroot
         dataroot=$(get_cfg_value "dataroot" "$config_file")
         if [ -z "$dataroot" ]; then
-            echo "❌ ERROR: \$CFG->dataroot not found in $config_file"
+            echo "❌ ERROR: could not read a usable \$CFG->dataroot from $config_file"
+            echo "   Neither PHP nor the text parser returned an absolute path."
             echo "   Supply the moodledata path explicitly with -md."
+            exit $EXIT_DATAROOT_NOT_FOUND
+        fi
+        if [ ! -d "$dataroot" ]; then
+            echo "❌ ERROR: \$CFG->dataroot points at a non-existent directory:"
+            echo "   $dataroot"
+            echo "   Check config.php, or supply the path explicitly with -md."
             exit $EXIT_DATAROOT_NOT_FOUND
         fi
         MOODLEDATA_DIR="$dataroot"
