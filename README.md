@@ -3,7 +3,7 @@
 Sets ownership and file modes on a Moodle installation according to Moodle's
 own security guidance, in two selectable models.
 
-- **Release:** 26.09
+- **Release:** 26.10
 - **Author:** Daniele Lolli (UncleDan)
 - **Licence:** GPL-3.0
 - **Applies to:** Moodle 4.x and 5.x (the permission model is branch independent)
